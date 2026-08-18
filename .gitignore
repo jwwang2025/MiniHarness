@@ -49,6 +49,3 @@ desktop.ini
 .cache/
 .eslintcache
 .stylelintcache
-
-# Project-specific
-claude-code/
