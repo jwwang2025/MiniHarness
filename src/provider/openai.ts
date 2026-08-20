@@ -1,5 +1,5 @@
 import { apiKey, baseUrl, model, type ChatMessage } from "../config.ts";
-import type { ToolCall } from "../types.ts";
+import type { ToolCall } from "../tools/types.ts";
 
 /* feat/minimal-streaming-agent
 ----------------------------------------------------------------
@@ -25,16 +25,13 @@ export async function streamChat(
       messages,
       stream: true,
     }),
-    signal,
+    signal: signal ?? null,
   });
-
   if (!res.ok || !res.body) {
     throw new Error(`API error: ${res.status} ${await res.text()}`);
   }
-
   return parseSSE(res.body);
 }
-
 
 /**
  * 解析 OpenAI 兼容 SSE 流式二进制响应
@@ -71,5 +68,52 @@ interface ToolResponseMessage {
   content: string;
 }
 
+/**
+ * 调用模型，支持工具调用
+ * @param messages 输入消息序列，包含用户消息和工具调用消息
+ * @param tools 工具调用序列，包含工具名称、描述和参数
+ * @param signal 取消信号，用于中断请求
+ * @returns 包含模型输出文本和工具调用结果的对象
+ */
+export async function chatWithTools(
+    messages: ChatMessage[],
+    tools: Array<{ type: "function"; function: { name: string; description: string; parameters: Record<string, unknown> } }>,
+    signal?: AbortSignal,
+): Promise<{ 
+    content: string; 
+    toolCalls: ToolCall[];
+}> {
+    const res = await fetch(`${baseUrl}/chat/completions`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}` },
+    body: JSON.stringify({ model, messages, tools }),
+    signal: signal ?? null,
+  });
+  if (!res.ok || !res.body) {
+    throw new Error(`API error: ${res.status} ${await res.text()}`);
+  }
+  const data = await res.json();
+  const choice = data.choices[0];
+  const toolCalls: ToolCall[] = (choice.message.tool_calls ?? []).map((tc: { id: string; function: { name: string; arguments: string } }) => ({
+    id: tc.id,
+    name: tc.function.name,
+    arguments: tc.function.arguments,
+  }));
+  return { content: choice.message.content ?? "", toolCalls };
+}
 
-
+/**
+ * 合并工具调用消息到输入消息序列
+ * @param messages 输入消息序列，包含用户消息和工具调用消息
+ * @param toolResults 工具调用结果序列，包含工具调用ID和输出内容
+ * @returns 合并后的消息序列，包含用户消息、工具调用消息和模型输出消息
+ */
+export function appendToolMessages(
+  messages: ChatMessage[],
+  toolResults: { callId: string; output: string }[],
+): (ChatMessage | ToolResponseMessage)[] {
+  return [
+    ...messages,
+    ...toolResults.map(r => ({ role: "tool" as const, tool_call_id: r.callId, content: r.output })),
+  ];
+}

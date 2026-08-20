@@ -11,4 +11,7 @@ const env = z.object({
 export const apiKey = env.MINIHARNESS_API_KEY;
 export const baseUrl = env.MINIHARNESS_BASE_URL;
 export const model = env.MINIHARNESS_MODEL;
-export type ChatMessage = { role: "system" | "user" | "assistant"; content: string };
+export type ChatMessage = { 
+  role: "system" | "user" | "assistant"; 
+  content: string; 
+};

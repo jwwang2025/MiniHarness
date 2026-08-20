@@ -14,10 +14,10 @@
     // "types": ["node"],
     // and npm install -D @types/node
 
-    // Other Outputs
-    "sourceMap": true,
-    "declaration": true,
-    "declarationMap": true,
+    // Emit: 项目使用 tsx 直接运行 TS 源码，无需编译输出
+    "noEmit": true,
+    // 允许 import 路径以 .ts 结尾（配合 noEmit 使用）
+    "allowImportingTsExtensions": true,
 
     // Stricter Typechecking Options
     "noUncheckedIndexedAccess": true,
