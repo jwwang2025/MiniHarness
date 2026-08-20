@@ -1,5 +1,15 @@
 import { apiKey, baseUrl, model, type ChatMessage } from "../config.ts";
+import type { ToolCall } from "../types.ts";
 
+/* feat/minimal-streaming-agent
+----------------------------------------------------------------
+*/
+/*
+* 流式输出模型输出文本delta，支持工具调用
+* @param messages 输入消息序列，包含用户消息和工具调用消息
+* @param signal 取消信号，用于中断请求
+* @returns AsyncIterable<string> 异步迭代器，逐段产出模型输出文本delta
+*/
 export async function streamChat(
   messages: ChatMessage[],
   signal?: AbortSignal,
@@ -22,7 +32,6 @@ export async function streamChat(
     throw new Error(`API error: ${res.status} ${await res.text()}`);
   }
 
-  // 把响应体按行解析成 SSE 事件，逐个 yield 出文本增量
   return parseSSE(res.body);
 }
 
@@ -52,3 +61,15 @@ async function* parseSSE(body: ReadableStream<Uint8Array>): AsyncIterable<string
     }
   }
 }
+
+/* feat/tool-system
+*----------------------------------------------------------------
+*/
+interface ToolResponseMessage {
+  role: "tool";
+  tool_call_id: string;
+  content: string;
+}
+
+
+
