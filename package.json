@@ -18,6 +18,7 @@
     "typescript": "^7.0.2"
   },
   "dependencies": {
+    "gpt-tokenizer": "^4.0.0",
     "zod": "^4.4.3"
   }
 }

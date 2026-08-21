@@ -8,6 +8,9 @@ importers:
 
   .:
     dependencies:
+      gpt-tokenizer:
+        specifier: ^4.0.0
+        version: 4.0.0
       zod:
         specifier: ^4.4.3
         version: 4.4.3
@@ -313,6 +316,9 @@ packages:
     engines: {node: ^8.16.0 || ^10.6.0 || >=11.0.0}
     os: [darwin]
 
+  gpt-tokenizer@4.0.0:
+    resolution: {integrity: sha512-YAWIyzvuVUHEfW7tFfFAxH8qQb+Q3RU9nYOTy7skMNX5qzU6Q8jxTHZLyO56ug1vYvCR7wndzpd3jwD86/mhjQ==}
+
   tsx@4.23.12:
     resolution: {integrity: sha512-FDf4L4sYzKtzWYhU/Xm0AQFdTjdIxNo9ElTf2mxXM6k8YMHXzYUe4yODVaXP4V9uMFbVg8c0qyBccK2OOxb45Q==}
     engines: {node: '>=18.0.0'}
@@ -504,6 +510,8 @@ snapshots:
 
   fsevents@2.3.3:
     optional: true
+
+  gpt-tokenizer@4.0.0: {}
 
   tsx@4.23.12:
     dependencies:
