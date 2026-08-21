@@ -27,13 +27,9 @@ export async function runAgent(
         toolResults.push({ callId: tc.id, output: `未知工具: ${tc.name}` });
         continue;
       }
-      try {
-        const args = JSON.parse(tc.arguments || "{}");
-        const result = await tool.execute(args, ctx);
-        toolResults.push({ callId: tc.id, output: result.ok ? result.output : `[错误] ${result.error}` });
-      } catch (e) {
-        toolResults.push({ callId: tc.id, output: `[执行异常] ${String(e)}` });
-      }
+      const args = JSON.parse(tc.arguments || "{}");
+      const result = await tool.execute(args, ctx);
+      toolResults.push({ callId: tc.id, output: result.ok ? result.output : `[错误] ${result.error}` });
     }
 
     // 把 assistant 消息 + tool 结果追加回历史
@@ -49,7 +45,7 @@ export async function runAgent(
         })),
       } : {}),
     };
-
+    
     messages = appendToolMessages([...messages, assistantMsg], toolResults);
   }
 
