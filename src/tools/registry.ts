@@ -1,4 +1,4 @@
-import { Tool } from "./types.ts";
+import type { Tool } from "./types.ts";
 
 const tools = new Map<string, Tool>();
 

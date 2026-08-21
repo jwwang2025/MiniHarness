@@ -1,5 +1,5 @@
-import { streamChat } from "./provider/openai.ts";
-import type { ChatMessage } from "./config.ts";
+import { registerFileTools } from "./tools/file-tools.ts";
+import { runAgent } from "./agent/loop.ts";
 
 const [, , cmd, ...rest] = process.argv;
 if (cmd !== "ask" || !rest.length) {
@@ -9,9 +9,7 @@ if (cmd !== "ask" || !rest.length) {
 const ctrl = new AbortController();
 process.on("SIGINT", () => ctrl.abort());
 
-const stream = await streamChat(
-  [{ role: "user", content: rest.join(" ") }] satisfies ChatMessage[],
-  ctrl.signal,
-);
-for await (const chunk of stream) process.stdout.write(chunk);
-console.log();
+registerFileTools();
+
+const answer = await runAgent(rest.join(" "), { workspace: process.cwd() }, ctrl.signal);
+console.log(answer);
