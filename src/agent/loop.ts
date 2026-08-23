@@ -40,8 +40,8 @@ export async function runAgent(
     const beforeTokens = estimateMessagesTokens(messages);
     const { messages: truncated, compressed } = await truncate(
       messages,
-      (old) => summarizeMessages(old, signal),
       DEFAULT_CTX,
+      (old) => summarizeMessages(old, signal),
     );
     if (compressed) {
       messages = truncated;
