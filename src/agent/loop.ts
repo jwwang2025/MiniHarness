@@ -2,18 +2,56 @@ import type { ChatMessage } from "../config.ts";
 import { chatWithTools, appendToolMessages } from "../provider/openai.ts";
 import { getTool, toOpenAITools } from "../tools/registry.ts";
 import type { ToolContext } from "../tools/types.ts";
+/* feat/context-management
+*----------------------------------------------------------------
+*/
+import { truncate, DEFAULT_CTX, clipToolOutput } from "./context.ts";
+import { summarizeMessages } from "./summarizer.ts";
+import { SYSTEM_PROMPT } from "./system-prompt.ts";
+import { estimateMessagesTokens } from "./tokens.ts";
 
 const MAX_ROUNDS = 10;
+
+export type LoopEvent =
+  | { type: "thinking"; round: number }
+  | { type: "tool_call"; name: string; args: unknown }
+  | { type: "tool_result"; name: string; output: string; ok: boolean }
+  | { type: "context_compressed"; beforeTokens: number; afterTokens: number }
+  | { type: "answer"; content: string };
+
+export interface LoopOptions {
+  onEvent?: (e: LoopEvent) => void;
+}
 
 export async function runAgent(
   task: string,
   ctx: ToolContext,
   signal?: AbortSignal,
+  opts: LoopOptions = {},
 ): Promise<string> {
-  let messages: ChatMessage[] = [{ role: "user", content: task }];
+  const sysMsg: ChatMessage = { role: "system", content: SYSTEM_PROMPT };
+  let messages: ChatMessage[] = [sysMsg, { role: "user", content: task }];
   const tools = toOpenAITools();
 
   for (let round = 0; round < MAX_ROUNDS; round++) {
+    opts.onEvent?.({ type: "thinking", round });
+
+    // 上下文压缩：summarize 闭包携带 signal
+    const beforeTokens = estimateMessagesTokens(messages);
+    const { messages: truncated, compressed } = await truncate(
+      messages,
+      (old) => summarizeMessages(old, signal),
+      DEFAULT_CTX,
+    );
+    if (compressed) {
+      messages = truncated;
+      opts.onEvent?.({
+        type: "context_compressed",
+        beforeTokens,
+        afterTokens: estimateMessagesTokens(messages),
+      });
+    }
+
     const { content, toolCalls } = await chatWithTools(messages, tools, signal);
 
     // 没有工具调用 → 直接返回文本

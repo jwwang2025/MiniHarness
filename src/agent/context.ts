@@ -42,5 +42,11 @@ export async function truncate(
     }
 
     const oldMessages = rest.slice(0, rest.length - kept.length);
-    
+    const summary = oldMessages.length ? await summarize(oldMessages) : "";
+    return {
+      messages: summary
+        ? [...sys, { role: "system", content: `[历史摘要]\n${summary}` } as ChatMessage, ...kept]
+        : [...sys, ...kept],
+      compressed: oldMessages.length > 0,
+    };
 }
