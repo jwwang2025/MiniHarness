@@ -10,6 +10,7 @@
     "test": "tsx test/tool-system.test.ts",
     "test:context": "tsx test/context-management.test.ts",
     "test:truncate": "tsx test/truncate.test.ts",
+    "test:safety": "tsx test/safety-permission.test.ts",
     "test:all": "pnpm test && pnpm test:context"
   },
   "keywords": [],
