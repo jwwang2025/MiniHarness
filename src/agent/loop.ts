@@ -9,18 +9,37 @@ import { truncate, DEFAULT_CTX, clipToolOutput } from "./context.ts";
 import { summarizeMessages } from "./summarizer.ts";
 import { SYSTEM_PROMPT } from "./system-prompt.ts";
 import { estimateMessagesTokens } from "./tokens.ts";
+/* feat/safety-permission
+*----------------------------------------------------------------
+*/
+import { checkPolicy } from "../safety/policy.ts";
+import { approve } from "../safety/approver.ts";
+import type { ToolInvocation } from "../safety/types.ts";
+import type { SafetyOptions } from "../safety/types.ts";
 
 const MAX_ROUNDS = 10;
 
 export type LoopEvent =
   | { type: "thinking"; round: number }
   | { type: "tool_call"; name: string; args: unknown }
+  | { type: "safety"; kind: "allow" | "ask" | "deny"; tool: string; reason?: string; detail?: string }
   | { type: "tool_result"; name: string; output: string; ok: boolean }
   | { type: "context_compressed"; beforeTokens: number; afterTokens: number }
   | { type: "answer"; content: string };
 
 export interface LoopOptions {
   onEvent?: (e: LoopEvent) => void;
+  safetyOptions?: SafetyOptions;
+}
+
+function buildSafetyOptions(opts: LoopOptions): SafetyOptions {
+  const upstreamLogger = opts.safetyOptions?.logger;
+  return {
+    logger: (e) => {
+      upstreamLogger?.(e);
+      opts.onEvent?.({ type: "safety", ...e });
+    },
+  };
 }
 
 export async function runAgent(
@@ -29,6 +48,8 @@ export async function runAgent(
   signal?: AbortSignal,
   opts: LoopOptions = {},
 ): Promise<string> {
+  const safetyOptions = buildSafetyOptions(opts);
+  
   const sysMsg: ChatMessage = { role: "system", content: SYSTEM_PROMPT };
   let messages: ChatMessage[] = [sysMsg, { role: "user", content: task }];
   const tools = toOpenAITools();
