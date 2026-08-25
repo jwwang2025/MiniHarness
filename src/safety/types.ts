@@ -1,11 +1,13 @@
-export type Permission = "allow" | "ask" | "deny";
-
+// 工具调用
 export interface ToolInvocation {
   toolName: string;
   args: Record<string, unknown>;
   workspace: string;
 }
 
+export type Permission = "allow" | "ask" | "deny";
+
+// 审批决定 / 授权判定
 export interface ApprovalDecision {
   permission: Permission;
   persistKey?: string;
