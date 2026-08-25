@@ -49,7 +49,7 @@ export async function runAgent(
   opts: LoopOptions = {},
 ): Promise<string> {
   const safetyOptions = buildSafetyOptions(opts);
-  
+
   const sysMsg: ChatMessage = { role: "system", content: SYSTEM_PROMPT };
   let messages: ChatMessage[] = [sysMsg, { role: "user", content: task }];
   const tools = toOpenAITools();
@@ -86,9 +86,24 @@ export async function runAgent(
         toolResults.push({ callId: tc.id, output: `未知工具: ${tc.name}` });
         continue;
       }
+
+      // --- 安全检查 + 审批 ---
       const args = JSON.parse(tc.arguments || "{}");
+      const inv: ToolInvocation = { toolName: tc.name, args, workspace: ctx.workspace };
+      const policyPerm = checkPolicy(inv, safetyOptions);
+      const { permission } = await approve(inv, policyPerm, safetyOptions);
+
+      if(permission === "deny") {
+        const out = policyPerm === "deny"?"[操作被拒] 安全策略拦截":"[操作被拒] 用户拒绝";
+        toolResults.push({ callId: tc.id, output: out });
+        opts.onEvent?.({ type: "tool_result", name: tc.name, output: out, ok: false });
+        continue;
+      }
+      
       const result = await tool.execute(args, ctx);
-      toolResults.push({ callId: tc.id, output: result.ok ? result.output : `[错误] ${result.error}` });
+      const output = result.ok ? clipToolOutput(result.output) : `[错误] ${result.error}`;
+      toolResults.push({ callId: tc.id, output });
+      opts.onEvent?.({ type: "tool_result", name: tc.name, output, ok: result.ok });
     }
 
     // 把 assistant 消息 + tool 结果追加回历史
