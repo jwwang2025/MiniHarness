@@ -39,12 +39,16 @@ export interface AgentResult {
 
 function buildSafetyOptions(opts: LoopOptions): SafetyOptions {
   const upstreamLogger = opts.safetyOptions?.logger;
-  return {
+  const result: SafetyOptions = {
     logger: (e) => {
       upstreamLogger?.(e);
       opts.onEvent?.({ type: "safety", ...e });
     },
   };
+  if (opts.safetyOptions?.promptFn) {
+    result.promptFn = opts.safetyOptions.promptFn;
+  }
+  return result;
 }
 
 export async function runAgent(

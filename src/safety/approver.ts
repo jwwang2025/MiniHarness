@@ -43,10 +43,11 @@ export async function approve(
 
     logger?.({ kind: "ask", tool: inv.toolName, detail: humanize(inv) });
     
-    const ans = await question(
-        `\n⚠️  即将执行: ${humanize(inv)}\n` +
-        `允许? [y=是 / n=否 / a=总是允许此模式] `,
-    );
+    const promptStr = `\n⚠️  即将执行: ${humanize(inv)}\n` +
+        `允许? [y=是 / n=否 / a=总是允许此模式] `;
+    const ans = opts.promptFn
+        ? await opts.promptFn(promptStr)
+        : await question(promptStr);
     if (ans === "a") {
         alwaysAllowKeys.add(key);
         return { permission: "allow", persistKey: key };

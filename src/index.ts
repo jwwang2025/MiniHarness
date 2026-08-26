@@ -41,6 +41,10 @@ if (cmd === "chat") {
   const rl = createInterface({ input: process.stdin, output: process.stdout });
   let history: ChatMessage[] | undefined;
 
+  const promptFn = (q: string) => new Promise<string>(res => {
+    rl.question(q, (a: string) => res(a.trim().toLowerCase()));
+  });
+
   console.log("MiniHarness 多轮对话模式（输入 :exit 退出，:reset 清空上下文）");
 
   const askOnce = async (): Promise<void> => {
@@ -61,7 +65,7 @@ if (cmd === "chat") {
           return;
         }
         
-        const result = await runAgent(text, ctx, ctrl.signal, { onEvent: printEvent }, history);
+        const result = await runAgent(text, ctx, ctrl.signal, { onEvent: printEvent, safetyOptions: { promptFn } }, history);
         history = result.messages;
         console.log(`\nAssistant> ${result.answer}`);
         resolve();

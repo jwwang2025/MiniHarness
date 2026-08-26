@@ -22,4 +22,5 @@ type SafetyLogEvent =
 //2 定义配置对象接口
 export interface SafetyOptions {
   logger?: (event:SafetyLogEvent)=>void;
+  promptFn?: (prompt: string) => Promise<string>;
 }
