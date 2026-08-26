@@ -32,6 +32,11 @@ export interface LoopOptions {
   safetyOptions?: SafetyOptions;
 }
 
+export interface AgentResult {
+  answer: string;
+  messages: ChatMessage[];
+}
+
 function buildSafetyOptions(opts: LoopOptions): SafetyOptions {
   const upstreamLogger = opts.safetyOptions?.logger;
   return {
@@ -47,11 +52,14 @@ export async function runAgent(
   ctx: ToolContext,
   signal?: AbortSignal,
   opts: LoopOptions = {},
-): Promise<string> {
+  initialMessages?: ChatMessage[],
+): Promise<AgentResult> {
   const safetyOptions = buildSafetyOptions(opts);
 
   const sysMsg: ChatMessage = { role: "system", content: SYSTEM_PROMPT };
-  let messages: ChatMessage[] = [sysMsg, { role: "user", content: task }];
+  let messages: ChatMessage[] = initialMessages && initialMessages.length
+    ? [...initialMessages, { role: "user", content: task }]
+    : [sysMsg, { role: "user", content: task }];
   const tools = toOpenAITools();
 
   for (let round = 0; round < MAX_ROUNDS; round++) {
@@ -75,8 +83,11 @@ export async function runAgent(
 
     const { content, toolCalls } = await chatWithTools(messages, tools, signal);
 
-    // 没有工具调用 → 直接返回文本
-    if (!toolCalls.length) return content;
+    // 没有工具调用 → 返回文本，并把 assistant 回答追加进历史，供后续多轮对话使用
+    if (!toolCalls.length) {
+      const finalMessages = [... messages, { role: "assistant", content }];
+      return { answer: content, messages: finalMessages };
+    }
 
     // 执行所有工具调用
     const toolResults = [];
