@@ -38,30 +38,44 @@ if (cmd === "ask" && rest.length) {
 }
 
 if (cmd === "chat") {
-  const rl = createInterface({ input: process.stdin, output: process.stdout});
-  let history : ChatMessage[] | undefined;
+  const rl = createInterface({ input: process.stdin, output: process.stdout });
+  let history: ChatMessage[] | undefined;
+
   console.log("MiniHarness 多轮对话模式（输入 :exit 退出，:reset 清空上下文）");
 
-  const prompt = () => {
-    rl.question("\n你> ", async (input) => {
-      const text = input.trim();
-      if(!text) return prompt();
+  const askOnce = async (): Promise<void> => {
+    return new Promise((resolve) => {
+      rl.question("\n你> ", async (input: string) => {
+        const text = input.trim();
+        if (!text) { resolve(); return; }
 
-      if(text === ":exit" || text === ":quit") {
-        rl.close();
-        return;
-      }
-      if(text === ":reset") {
-        history = undefined;
-        console.log("[已重置上下文]");
-        return prompt();
-      }
-
-      const result = await runAgent(text, ctx, ctrl.signal, { onEvent: printEvent }, history);
-      history = result.messages;            // 累积，下一轮继续使用
-      console.log(`\nAssistant> ${result.answer}`);
+        if (text === ":exit" || text === ":quit") {
+          rl.close();
+          resolve();
+          return;
+        }
+        if (text === ":reset") {
+          history = undefined;
+          console.log("[已重置上下文]");
+          resolve();
+          return;
+        }
+        
+        const result = await runAgent(text, ctx, ctrl.signal, { onEvent: printEvent }, history);
+        history = result.messages;
+        console.log(`\nAssistant> ${result.answer}`);
+        resolve();
+      });
     });
   };
-  prompt();
+
+  const loop = async () => {
+    while (true) {
+      await askOnce();
+      if (rl.closed) break;
+    }
+  };
+
+  loop();
 }
  

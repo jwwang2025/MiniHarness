@@ -85,7 +85,7 @@ export async function runAgent(
 
     // 没有工具调用 → 返回文本，并把 assistant 回答追加进历史，供后续多轮对话使用
     if (!toolCalls.length) {
-      const finalMessages = [... messages, { role: "assistant", content }];
+      const finalMessages = [...messages, { role: "assistant", content }];
       return { answer: content, messages: finalMessages };
     }
 
