@@ -37,6 +37,7 @@ async function ask() {
   const question = rest.join(" ").trim();
   if (!question) { console.error(USAGE); process.exit(1); }
   const session = await createSession();
+  session.title = question.length > 30 ? question.slice(0, 30) + "..." : question;
   const { answer } = await runAgent(question, ctx, ctrl.signal, { onEvent: logEvent, session });
   console.log(answer);
   console.error(`\n[session] ${session.id}`);
