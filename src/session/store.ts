@@ -15,7 +15,7 @@ function titleFromMessages(messages: Session["messages"]): string {
     return text.length > 30 ? text.slice(0, 30) + "..." : text;
 }
 
-async function saveSession(session: Session): Promise<void> {
+export async function saveSession(session: Session): Promise<void> {
     session.updatedAt = Date.now();
     await mkdir(SESSIONS_DIR, { recursive: true });
     await writeFile(sessionPath(session.id), JSON.stringify(session, null, 2), "utf-8");

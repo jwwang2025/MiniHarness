@@ -16,6 +16,11 @@ import { checkPolicy } from "../safety/policy.ts";
 import { approve } from "../safety/approver.ts";
 import type { ToolInvocation } from "../safety/types.ts";
 import type { SafetyOptions } from "../safety/types.ts";
+/* feat/session-persistence
+*----------------------------------------------------------------
+*/
+import { saveSession } from "../session/store.ts";
+import type { Session } from "../session/types.ts";
 
 const MAX_ROUNDS = 10;
 
@@ -30,6 +35,7 @@ export type LoopEvent =
 export interface LoopOptions {
   onEvent?: (e: LoopEvent) => void;
   safetyOptions?: SafetyOptions;
+  session?: Session;
 }
 
 export interface AgentResult {
@@ -56,14 +62,21 @@ export async function runAgent(
   ctx: ToolContext,
   signal?: AbortSignal,
   opts: LoopOptions = {},
-  initialMessages?: ChatMessage[],
 ): Promise<AgentResult> {
   const safetyOptions = buildSafetyOptions(opts);
 
+  const isResume = opts.session !== null && task === "";
+
   const sysMsg: ChatMessage = { role: "system", content: SYSTEM_PROMPT };
-  let messages: ChatMessage[] = initialMessages && initialMessages.length
-    ? [...initialMessages, { role: "user", content: task }]
+  let messages: ChatMessage[] = isResume
+    ? [...opts.session!.messages ?? []]
     : [sysMsg, { role: "user", content: task }];
+
+  if(opts.session && !isResume) {
+    messages = [...opts.session.messages, { role: "user", content: task }];
+    opts.session.messages = messages;
+  }
+
   const tools = toOpenAITools();
 
   for (let round = 0; round < MAX_ROUNDS; round++) {
@@ -90,6 +103,11 @@ export async function runAgent(
     // 没有工具调用 → 返回文本，并把 assistant 回答追加进历史，供后续多轮对话使用
     if (!toolCalls.length) {
       const finalMessages = [...messages, { role: "assistant", content }];
+      if(opts.session) {
+        opts.session.messages = finalMessages;
+        opts.session.state = "done";
+        await saveSession(opts.session);
+      }
       return { answer: content, messages: finalMessages };
     }
 
@@ -136,6 +154,13 @@ export async function runAgent(
     };
     
     messages = appendToolMessages([...messages, assistantMsg], toolResults);
+
+    if(opts.session) {
+      opts.session.messages = messages;
+      opts.session.state = "running";
+      await saveSession(opts.session);
+    }
+
   }
 
   throw new Error("达到最大轮数限制");
