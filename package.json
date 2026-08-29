@@ -6,7 +6,7 @@
   "type": "module",
   "scripts": {
     "start": "tsx src/index.ts",
-    "dev": "tsx watch src/index.ts",
+    "dev": "tsx src/index.ts",
     "test": "tsx test/tool-system.test.ts",
     "test:context": "tsx test/context-management.test.ts",
     "test:truncate": "tsx test/truncate.test.ts",

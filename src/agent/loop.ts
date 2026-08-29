@@ -65,16 +65,23 @@ export async function runAgent(
 ): Promise<AgentResult> {
   const safetyOptions = buildSafetyOptions(opts);
 
-  const isResume = opts.session !== null && task === "";
+  const isResume = opts.session != null && task === "";
 
   const sysMsg: ChatMessage = { role: "system", content: SYSTEM_PROMPT };
-  let messages: ChatMessage[] = isResume
-    ? [...opts.session!.messages ?? []]
-    : [sysMsg, { role: "user", content: task }];
-
-  if(opts.session && !isResume) {
-    messages = [...opts.session.messages, { role: "user", content: task }];
+  let messages: ChatMessage[];
+  if (isResume) {
+    // 断点续跑：从 session 恢复消息，确保 system 消息存在
+    const prev = opts.session!.messages ?? [];
+    messages = prev[0]?.role === "system" ? [...prev] : [sysMsg, ...prev];
+  } else if (opts.session) {
+    // 多轮对话：追加新 user 消息到 session，确保 system 消息存在
+    const prev = opts.session.messages;
+    messages = prev[0]?.role === "system"
+      ? [...prev, { role: "user", content: task }]
+      : [sysMsg, ...prev, { role: "user", content: task }];
     opts.session.messages = messages;
+  } else {
+    messages = [sysMsg, { role: "user", content: task }];
   }
 
   const tools = toOpenAITools();
