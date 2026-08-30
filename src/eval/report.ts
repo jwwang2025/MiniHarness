@@ -5,15 +5,20 @@ import type { EvalReport } from "./types.ts";
 const BASELINE_PATH = ".anvil/eval-baseline.json";
 
 export async function loadBaseline(): Promise<EvalReport | null> {
-    const data = await readFile(BASELINE_PATH, "utf-8");
-    return JSON.parse(data) as EvalReport;
+    try {
+        const data = await readFile(BASELINE_PATH, "utf-8");
+        return JSON.parse(data) as EvalReport;
+    } catch (e) {
+        // 首次运行时基线文件不存在，返回 null 走"无基线"分支
+        return null;
+    }
 }
 
 export async function saveBaseline(report: EvalReport): Promise<void> {
     await mkdir(dirname(BASELINE_PATH), { recursive: true });
     await writeFile(BASELINE_PATH, JSON.stringify(report, null, 2), "utf-8");
 }
-export async function compareWithBaseline(report: EvalReport, baseline: EvalReport): EvalReport {
+export function compareWithBaseline(report: EvalReport, baseline: EvalReport): EvalReport {
     const prevPass = new Set(baseline.results.filter((r) => r.passed).map((r) => r.taskId));
     const currPass = new Set(report.results.filter((r) => r.passed).map((r) => r.taskId));
     return {
