@@ -113,7 +113,7 @@ async function sessions() {
 }
 
 // eval：跑评测集，可选 --save 存为新基线
-async function eval() {
+async function eval_() {
     const isSaveBaseline = rest[0] === "--save";
     const workspace = process.cwd();
     const results = [];
@@ -136,6 +136,6 @@ async function eval() {
     
 }
 
-const commands: Record<string, () => Promise<void>> = { ask, chat, resume, sessions, eval };
+const commands: Record<string, () => Promise<void>> = { ask, chat, resume, sessions, eval: eval_ };
 await (commands[cmd] ?? (() => { console.error(USAGE); process.exit(1); }))();
  
