@@ -56,8 +56,7 @@ export async function runEvalTask(task: EvalTask, workspace: string): Promise<Ev
             cost: estimateCost(totalTokens),
             durationMs: Date.now() - startTime,
         } satisfies EvalResult;
-    },
-    (e): EvalResult => ({
+    }).catch((e) => ({
         taskId: task.id,
         passed: false,
         answer: "",
