@@ -54,6 +54,9 @@ function buildSafetyOptions(opts: LoopOptions): SafetyOptions {
   if (opts.safetyOptions?.promptFn) {
     result.promptFn = opts.safetyOptions.promptFn;
   }
+  if (opts.safetyOptions?.autoApprove) {
+    result.autoApprove = true;
+  }
   return result;
 }
 

@@ -4,6 +4,10 @@ import { createSession, loadSession, listSessions } from "./session/store.ts";
 import type { Session } from "./session/types.ts";
 import { createInterface } from "node:readline";
 
+import { TASKS } from "./eval/tasks.ts";
+import { runEvalTask, buildReport } from "./eval/runner.ts";
+import { loadBaseline, saveBaseline, compareWithBaseline, formatReport } from "./eval/report.ts";
+
 const [, , cmd, ...rest] = process.argv;
 const ctrl = new AbortController();
 process.on("SIGINT", () => {
@@ -108,6 +112,30 @@ async function sessions() {
   }
 }
 
-const commands: Record<string, () => Promise<void>> = { ask, chat, resume, sessions };
+// eval：跑评测集，可选 --save 存为新基线
+async function eval_() {
+    const isSaveBaseline = rest[0] === "--save";
+    const workspace = process.cwd();
+    const results = [];
+    for (const task of TASKS) {
+        const result = await runEvalTask(task, workspace);
+        results.push(result);
+    }
+    const report = buildReport(results);
+    const baseline = await loadBaseline();
+    if (baseline) {
+        const result = compareWithBaseline(report, baseline);
+        console.log(formatReport(result));
+    } else {
+        console.log(formatReport(report));
+    }
+    if (isSaveBaseline) {
+        await saveBaseline(report);
+        console.log("已保存新基线");
+    }
+    
+}
+
+const commands: Record<string, () => Promise<void>> = { ask, chat, resume, sessions, eval: eval_ };
 await (commands[cmd] ?? (() => { console.error(USAGE); process.exit(1); }))();
  

@@ -40,7 +40,7 @@ export async function runEvalTask(task: EvalTask, workspace: string): Promise<Ev
     let rounds = 0;
 
     const result = await runAgent(task.description, { workspace }, ctrl.signal, {
-        safetyOptions: { autoApprove: "allow" },
+        safetyOptions: { autoApprove: true },
         onEvent: (e) => { if (e.type === "thinking") rounds = e.round + 1; },
     }).then(
         async (res) => {

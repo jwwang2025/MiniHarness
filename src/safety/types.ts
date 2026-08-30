@@ -22,5 +22,7 @@ type SafetyLogEvent =
 //2 定义配置对象接口
 export interface SafetyOptions {
   logger?: (event:SafetyLogEvent)=>void;
-  promptFn?: (prompt: string) => Promise<string>;
+  promptFn?: (prompt: string)=>Promise<string>;
+  // eval/自动化场景：跳过所有 "ask" 类工具的人工确认（仍尊重策略 "deny"）
+  autoApprove?: boolean;
 }

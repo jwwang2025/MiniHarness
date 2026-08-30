@@ -35,6 +35,10 @@ export async function approve(
     if(perm==="deny") {
         return { permission: "deny" };
     };
+    // eval/自动化：策略为 ask 时直接放行，跳过人工确认
+    if(opts.autoApprove) {
+        return { permission: "allow" };
+    }
 
     const key = persistKey(inv);
     if(alwaysAllowKeys.has(key)) {
