@@ -24,6 +24,10 @@
   },
   "dependencies": {
     "gpt-tokenizer": "^4.0.0",
+    "marked": "^18.0.11",
+    "marked-terminal": "^7.3.0",
+    "ora": "^9.4.1",
+    "picocolors": "^1.1.1",
     "zod": "^4.4.3"
   }
 }
