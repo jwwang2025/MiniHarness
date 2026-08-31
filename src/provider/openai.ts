@@ -1,5 +1,5 @@
-import { apiKey, baseUrl, model, type ChatMessage } from "../config.ts";
-import type { ToolCall } from "../tools/types.ts";
+import { apiKey, baseUrl, model } from "../config.ts";
+import type { ChatMessage, ChatTool, ToolCall } from "./types.ts";
 
 /* feat/minimal-streaming-agent
 ----------------------------------------------------------------
@@ -62,11 +62,7 @@ async function* parseSSE(body: ReadableStream<Uint8Array>): AsyncIterable<string
 /* feat/tool-system
 *----------------------------------------------------------------
 */
-interface ToolResponseMessage {
-  role: "tool";
-  tool_call_id: string;
-  content: string;
-}
+// ToolResponseMessage 已迁移到 src/provider/types.ts 的 ChatMessage tool 变体
 
 /**
  * 调用模型，支持工具调用
@@ -77,7 +73,7 @@ interface ToolResponseMessage {
  */
 export async function chatWithTools(
     messages: ChatMessage[],
-    tools: Array<{ type: "function"; function: { name: string; description: string; parameters: Record<string, unknown> } }>,
+    tools: ChatTool[],
     signal?: AbortSignal,
 ): Promise<{ 
     content: string; 
@@ -102,18 +98,5 @@ export async function chatWithTools(
   return { content: choice.message.content ?? "", toolCalls };
 }
 
-/**
- * 合并工具调用消息到输入消息序列
- * @param messages 输入消息序列，包含用户消息和工具调用消息
- * @param toolResults 工具调用结果序列，包含工具调用ID和输出内容
- * @returns 合并后的消息序列，包含用户消息、工具调用消息和模型输出消息
- */
-export function appendToolMessages(
-  messages: ChatMessage[],
-  toolResults: { callId: string; output: string }[],
-): (ChatMessage | ToolResponseMessage)[] {
-  return [
-    ...messages,
-    ...toolResults.map(r => ({ role: "tool" as const, tool_call_id: r.callId, content: r.output })),
-  ];
-}
+// appendToolMessages 已迁移到 src/provider/types.ts，这里 re-export 保持向后兼容
+export { appendToolMessages } from "./types.ts";

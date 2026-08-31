@@ -1,9 +1,3 @@
-export interface ToolCall {
-  id: string;
-  name: string;
-  arguments: string;
-}
-
 export interface Tool<P = unknown> {
   name: string;
   description: string;
