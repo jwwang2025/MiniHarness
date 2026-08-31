@@ -1,5 +1,5 @@
-import type { ChatMessage } from "../config.ts";
-import { streamChat } from "../provider/openai.ts";
+import type { ChatMessage } from "../provider/types.ts";
+import { streamChat } from "../provider/types.ts";
 
 export async function summarizeMessages(
     oldMessages: ChatMessage[],

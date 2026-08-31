@@ -1,5 +1,5 @@
-import type { ChatMessage } from "../config.ts";
-import { chatWithTools, appendToolMessages } from "../provider/openai.ts";
+import type { ChatMessage } from "../provider/types.ts";
+import { chatWithTools, appendToolMessages } from "../provider/types.ts";
 import { getTool, toOpenAITools } from "../tools/registry.ts";
 import type { ToolContext } from "../tools/types.ts";
 /* feat/context-management
