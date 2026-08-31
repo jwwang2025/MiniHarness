@@ -1,9 +1,9 @@
 import pc from "picocolors";
 import ora, { type Ora } from "ora";
 import { marked } from "marked";
-import markedTerminal from "marked-terminal";
+import { markedTerminal } from "marked-terminal";
 
-marked.use(new markedTerminal());
+marked.use(markedTerminal());
 
 export const color = pc;
 export { pc };
@@ -28,10 +28,11 @@ export function stopSpinner(msg?: string,symbol?: string): void {
 }
 
 export function renderMarkdown(text: string): string {
-    return marked.parse(text).trim();
+    // marked.parse 默认同步返回 string；async:false 既约束类型又显式声明意图
+    return marked.parse(text, { async: false }).trim();
 }
 
-export function renderToolCall(name: string, arguments: unknown): string {
-    const s = typeof arguments === "string" ? arguments : JSON.stringify(arguments);
+export function renderToolCall(name: string, args: unknown): string {
+    const s = typeof args === "string" ? args : JSON.stringify(args);
     return `${pc.magenta(`🔧 ${name}`)} ${pc.gray(s.slice(0, 80))}`;
 }

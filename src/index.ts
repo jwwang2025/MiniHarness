@@ -2,7 +2,7 @@ import { registerFileTools } from "./tools/file-tools.ts";
 import { runAgent, type LoopEvent } from "./agent/loop.ts";
 import { createSession, loadSession, listSessions } from "./session/store.ts";
 import type { Session } from "./session/types.ts";
-import { createInterface } from "node:readline";
+import { repl } from "./cli/repl.ts";
 
 import { TASKS } from "./eval/tasks.ts";
 import { runEvalTask, buildReport } from "./eval/runner.ts";
@@ -47,49 +47,17 @@ async function ask() {
   console.error(`\n[session] ${session.id}`);
 }
 
-// chat：多轮对话，自动持久化，支持恢复
+// chat：多轮对话，自动持久化，支持恢复（UI 委托给 cli/repl）
 async function chat() {
   const sessionId = rest[0];
-  let session: Session;
-
   if (sessionId) {
     const loaded = await loadSession(sessionId);
-    if (!loaded) { console.error(`未找到会话 ${sessionId}`); process.exit(1); }
-    session = loaded;
-    console.log(`[恢复会话 ${session.id}] ${session.title}`);
-  } else {
-    session = await createSession();
+    if (!loaded) { console.error(`未找到会话 ${sessionId}`); process.exit(1); return; }
+    console.log(`[恢复会话 ${loaded.id}] ${loaded.title}`);
+    await repl(ctx.workspace, {}, loaded);
+    return;
   }
-
-  console.log("MiniHarness 多轮对话（:exit 退出，:reset 新建会话，:sessions 列表）");
-  console.log(`session: ${session.id}`);
-
-  const rl = createInterface({ input: process.stdin, output: process.stdout });
-  const promptFn = (q: string) => new Promise<string>(res => rl.question(q, (a: string) => res(a.trim())));
-
-  while (!rl.closed) {
-    const input = await promptFn("\n你> ");
-    if (!input) continue;
-    if (input === ":exit" || input === ":quit") { rl.close(); break; }
-    if (input === ":reset") {
-      session = await createSession();
-      console.log(`[新会话 ${session.id}]`);
-      continue;
-    }
-    if (input === ":sessions") {
-      const list = await listSessions();
-      if (!list.length) { console.log("暂无会话"); continue; }
-      for (const s of list) {
-        console.log(`  ${s.id}  [${s.state}]  ${s.title}  (${new Date(s.updatedAt).toLocaleString()})`);
-      }
-      continue;
-    }
-
-    const { answer } = await runAgent(input, ctx, ctrl.signal, { onEvent: logEvent, safetyOptions: { promptFn }, session });
-    console.log(`\nAssistant> ${answer}`);
-  }
-
-  console.log(`\n[session] ${session.id}  ← 用 pnpm dev chat ${session.id} 恢复`);
+  await repl(ctx.workspace, {});
 }
 
 // resume：从落盘的 session 续跑
