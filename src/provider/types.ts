@@ -37,17 +37,26 @@ export interface ChatResult {
   usage?: Usage;
 }
 
+// 流式事件协议：文本增量 / 工具调用分片 / token 用量
+export type StreamEvent =
+  | { type: "text"; delta: string }
+  | { type: "tool_call_delta"; index: number; id?: string; name?: string; argumentsDelta: string }
+  | { type: "usage"; usage: Usage };
+
 export interface Provider {
   readonly model: string;
+  // 非流式：保留备用（批处理、评测、不支持流式的厂商兜底）
   chat(
-    messages: ChatMessage[], 
-    tools: ChatTool[], 
+    messages: ChatMessage[],
+    tools: ChatTool[],
     signal?: AbortSignal
   ): Promise<ChatResult>;
+  // 流式：产出结构化事件，tool_calls 分片由消费方按 index 聚合
   streamChat(
-    messages: ChatMessage[], 
+    messages: ChatMessage[],
+    tools: ChatTool[],
     signal?: AbortSignal
-  ): Promise<AsyncIterable<string>>;
+  ): Promise<AsyncIterable<StreamEvent>>;
 }
 
 export function appendToolMessages(

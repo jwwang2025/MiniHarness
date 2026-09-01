@@ -4,7 +4,7 @@ import { runAgent, type LoopEvent } from "../agent/index.ts";
 import { createProvider } from "../provider/index.ts";
 import type { SafetyOptions } from "../safety/index.ts";
 import { createSession, listSessions, type Session } from "../session/index.ts";
-import { startSpinner, stopSpinner, renderMarkdown, renderToolCall, color } from "./index.ts";
+import { startSpinner, stopSpinner, renderToolCall, color } from "./index.ts";
 
 // Provider 无状态，模块级创建一次即可
 const provider = createProvider();
@@ -27,6 +27,12 @@ function onEvent(event: LoopEvent) {
         case "context_compressed":
             stderr.write(`  ${color.gray(`⚡ 压缩 ${event.beforeTokens}→${event.afterTokens} tok`)}\n`);
             break;
+        case "text_delta": {
+            // 首个 delta 到达时停掉 spinner，避免 ora 刷新覆盖流式输出
+            stopSpinner();
+            output.write(event.delta);
+            break;
+        }
         case "safety": {
             // 停掉 spinner，避免 ora 持续写 stdout 把审批提示覆盖掉，导致用户看不到 [y/n]
             stopSpinner();
@@ -122,8 +128,9 @@ export async function repl(
             safetyOptions: mergedSafety,
             session: currentSession,
         }).then(
-            (r) => {
-                output.write(`\n${color.green("❯❯")} ${renderMarkdown(r.answer)}\n`);
+            () => {
+                // 答案已通过 text_delta 实时输出，这里只补换行
+                output.write("\n");
             },
             (e) => {
                 if (!inFlight?.signal.aborted) {

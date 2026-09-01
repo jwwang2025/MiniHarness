@@ -32,7 +32,8 @@ const logEvent = (e: LoopEvent) => {
     case "safety":              console.error(`  [safety:${e.kind}] ${e.tool}${e.detail ? ` ${e.detail}` : ""}`); break;
     case "tool_result":         console.error(`  ${e.ok ? "✓" : "✗"} ${e.name} → ${e.output.slice(0, 100)}${e.output.length > 100 ? "..." : ""}`); break;
     case "context_compressed": console.error(`  [context] ${e.beforeTokens} → ${e.afterTokens} tokens`); break;
-    case "answer":              break; // answer 由主流程打印
+    case "text_delta":          process.stdout.write(e.delta); break; // 流式答案直出 stdout
+    case "answer":              break; // answer 已通过 text_delta 实时打印
   }
 };
 
@@ -42,8 +43,8 @@ async function ask() {
   if (!question) { console.error(USAGE); process.exit(1); }
   const session = await createSession();
   session.title = question.length > 30 ? question.slice(0, 30) + "..." : question;
-  const { answer } = await runAgent( question, provider, ctx, ctrl.signal, { onEvent: logEvent, session });
-  console.log(answer);
+  await runAgent( question, provider, ctx, ctrl.signal, { onEvent: logEvent, session });
+  console.log(); // 答案已流式输出，补换行
   console.error(`\n[session] ${session.id}`);
 }
 
@@ -66,8 +67,8 @@ async function resume() {
   if (!id) { console.error(USAGE); process.exit(1); }
   const session = await loadSession(id);
   if (!session) { console.error(`未找到会话 ${id}`); process.exit(1); }
-  const { answer } = await runAgent( "", provider, ctx, ctrl.signal, { onEvent: logEvent, session });
-  console.log(answer);
+  await runAgent( "", provider, ctx, ctrl.signal, { onEvent: logEvent, session });
+  console.log(); // 答案已流式输出，补换行
 }
 
 // sessions：列出所有会话

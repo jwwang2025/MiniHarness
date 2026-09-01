@@ -14,10 +14,13 @@ export async function summarizeMessages(
         role: "user",
         content: `把以下 Agent 对话历史压缩成 200 字以内摘要，重点保留：已做的决策、读写的文件路径、关键结论。不要复述过程。\n\n${transcript}`,
         }],
+        [], // 摘要无需工具
         signal,
     );
 
     let summary = "";
-    for await (const chunk of stream) summary += chunk;
+    for await (const ev of stream) {
+        if (ev.type === "text") summary += ev.delta;
+    }
     return summary;
 }

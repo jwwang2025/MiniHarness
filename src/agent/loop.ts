@@ -25,6 +25,7 @@ export type LoopEvent =
   | { type: "safety"; kind: "allow" | "ask" | "deny"; tool: string; reason?: string; detail?: string }
   | { type: "tool_result"; name: string; output: string; ok: boolean }
   | { type: "context_compressed"; beforeTokens: number; afterTokens: number }
+  | { type: "text_delta"; delta: string }
   | { type: "answer"; content: string };
 
 export interface LoopOptions {
@@ -104,7 +105,24 @@ export async function runAgent(
       });
     }
 
-    const { content, toolCalls } = await provider.chat(messages, tools, signal);
+    // 流式调用：文本增量实时推送，tool_calls 分片按 index 聚合
+    let content = "";
+    const tcMap = new Map<number, { id: string; name: string; arguments: string }>();
+    const stream = await provider.streamChat(messages, tools, signal);
+    for await (const ev of stream) {
+      if (ev.type === "text") {
+        content += ev.delta;
+        opts.onEvent?.({ type: "text_delta", delta: ev.delta });
+      } else if (ev.type === "tool_call_delta") {
+        const agg = tcMap.get(ev.index) ?? { id: "", name: "", arguments: "" };
+        if (ev.id) agg.id = ev.id;
+        if (ev.name) agg.name = ev.name;
+        agg.arguments += ev.argumentsDelta;
+        tcMap.set(ev.index, agg);
+      }
+      // usage 事件暂不消费，留给 Phase 8.3 可观测性
+    }
+    const toolCalls = [...tcMap.values()];
 
     // 没有工具调用 → 返回文本，并把 assistant 回答追加进历史，供后续多轮对话使用
     if (!toolCalls.length) {

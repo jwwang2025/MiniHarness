@@ -1,4 +1,4 @@
-import type { ChatMessage, ChatResult, ChatTool, Provider } from "./types.ts";
+import type { ChatMessage, ChatResult, ChatTool, Provider, StreamEvent } from "./types.ts";
 
 export interface ProviderConfig {
   apiKey: string;
@@ -38,8 +38,9 @@ export class OpenAIProvider implements Provider {
   
   async streamChat(
     messages: ChatMessage[],
+    tools: ChatTool[],
     signal?: AbortSignal,
-  ): Promise<AsyncIterable<string>> {
+  ): Promise<AsyncIterable<StreamEvent>> {
     const res = await fetch(`${this.config.baseUrl}/chat/completions`, {
       method: "POST",
       headers: {
@@ -49,7 +50,9 @@ export class OpenAIProvider implements Provider {
       body: JSON.stringify({
         model: this.model,
         messages,
+        ...(tools.length ? { tools } : {}),   // 空工具列表不下发，避免部分 API 报错
         stream: true,
+        stream_options: { include_usage: true }, // 最后一个 chunk 携带 usage
       }),
       signal: signal ?? null,
     });
@@ -73,9 +76,9 @@ export class OpenAIProvider implements Provider {
 /**
  * 解析 OpenAI 兼容 SSE 流式二进制响应
  * @param body fetch返回的可读二进制流 ReadableStream<Uint8Array>
- * @returns AsyncIterable<string> 异步迭代器，逐段产出模型输出文本delta
+ * @returns AsyncIterable<StreamEvent> 异步迭代器，逐段产出文本增量 / 工具调用分片 / 用量
  */
-  private async *parseSSE(body: ReadableStream<Uint8Array>): AsyncIterable<string> {
+  private async *parseSSE(body: ReadableStream<Uint8Array>): AsyncIterable<StreamEvent> {
     const reader = body.getReader();
     const decoder = new TextDecoder();
     let buffer = "";
@@ -90,8 +93,28 @@ export class OpenAIProvider implements Provider {
         if (!data.startsWith("data:")) continue;
         const json = data.slice(5).trim();
         if (json === "[DONE]") return;
-        const delta = JSON.parse(json).choices?.[0]?.delta?.content;
-        if (delta) yield delta;
+        const parsed = JSON.parse(json);
+        const delta = parsed.choices?.[0]?.delta;
+        if (delta?.content) yield { type: "text", delta: delta.content };
+        for (const tc of delta?.tool_calls ?? []) {
+          yield {
+            type: "tool_call_delta",
+            index: tc.index,
+            id: tc.id,
+            name: tc.function?.name,
+            argumentsDelta: tc.function?.arguments ?? "",
+          };
+        }
+        if (parsed.usage) {
+          yield {
+            type: "usage",
+            usage: {
+              promptTokens: parsed.usage.prompt_tokens,
+              completionTokens: parsed.usage.completion_tokens,
+              totalTokens: parsed.usage.total_tokens,
+            },
+          };
+        }
       }
     }
   }
