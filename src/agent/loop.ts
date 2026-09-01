@@ -1,5 +1,4 @@
-import type { ChatMessage } from "../provider/types.ts";
-import { chatWithTools, appendToolMessages } from "../provider/types.ts";
+import { Provider, ChatMessage, chatWithTools, appendToolMessages } from "../provider/index.ts";
 import { getTool, toOpenAITools } from "../tools/registry.ts";
 import type { ToolContext } from "../tools/types.ts";
 /* feat/context-management
@@ -62,6 +61,7 @@ function buildSafetyOptions(opts: LoopOptions): SafetyOptions {
 
 export async function runAgent(
   task: string,
+  provider: Provider,
   ctx: ToolContext,
   signal?: AbortSignal,
   opts: LoopOptions = {},
@@ -97,7 +97,7 @@ export async function runAgent(
     const { messages: truncated, compressed } = await truncate(
       messages,
       DEFAULT_CTX,
-      (old) => summarizeMessages(old, signal),
+      (old) => summarizeMessages(provider, old, signal),
     );
     if (compressed) {
       messages = truncated;
@@ -108,7 +108,7 @@ export async function runAgent(
       });
     }
 
-    const { content, toolCalls } = await chatWithTools(messages, tools, signal);
+    const { content, toolCalls } = await provider.chat(messages, tools, signal);
 
     // 没有工具调用 → 返回文本，并把 assistant 回答追加进历史，供后续多轮对话使用
     if (!toolCalls.length) {

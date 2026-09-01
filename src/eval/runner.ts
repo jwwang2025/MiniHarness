@@ -2,11 +2,14 @@ import { exec } from "node:child_process";
 import { promisify } from "node:util";
 import { runAgent } from "../agent/loop.ts";
 import { estimateMessagesTokens } from "../agent/tokens.ts";
-import { model } from "../config.ts";
+import { createProvider } from "../provider/index.ts";
 import type { EvalTask, EvalResult, EvalReport } from "./types.ts";
 
 const execP = promisify(exec);
 const TIMEOUT_MS = 60_000;
+
+// Provider 无状态，模块级创建一次即可
+const provider = createProvider();
 
 const PRICING: Record<string, number> = {
   "deepseek-chat": 0.14,
@@ -16,7 +19,7 @@ const PRICING: Record<string, number> = {
 };
 
 export function estimateCost(tokens: number): number {
-  return (tokens / 1_000_000) * PRICING[model];
+  return (tokens / 1_000_000) * (PRICING[provider.model] ?? 0);
 }
 
 async function verify(task: EvalTask, answer: string, workspace: string): Promise<boolean> {
@@ -39,7 +42,7 @@ export async function runEvalTask(task: EvalTask, workspace: string): Promise<Ev
     const timer = setTimeout(() => ctrl.abort(), TIMEOUT_MS);
     let rounds = 0;
 
-    const result = await runAgent(task.description, { workspace }, ctrl.signal, {
+    const result = await runAgent(task.description, provider, { workspace }, ctrl.signal, {
         safetyOptions: { autoApprove: true },
         onEvent: (e) => { if (e.type === "thinking") rounds = e.round + 1; },
     }).then(

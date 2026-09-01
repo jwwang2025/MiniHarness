@@ -8,6 +8,9 @@ import { TASKS } from "./eval/tasks.ts";
 import { runEvalTask, buildReport } from "./eval/runner.ts";
 import { loadBaseline, saveBaseline, compareWithBaseline, formatReport } from "./eval/report.ts";
 
+import { createProvider } from "./provider/index.ts";
+const provider = createProvider();
+
 const [, , cmd, ...rest] = process.argv;
 const ctrl = new AbortController();
 process.on("SIGINT", () => {
@@ -42,7 +45,7 @@ async function ask() {
   if (!question) { console.error(USAGE); process.exit(1); }
   const session = await createSession();
   session.title = question.length > 30 ? question.slice(0, 30) + "..." : question;
-  const { answer } = await runAgent(question, ctx, ctrl.signal, { onEvent: logEvent, session });
+  const { answer } = await runAgent( question, provider, ctx, ctrl.signal, { onEvent: logEvent, session });
   console.log(answer);
   console.error(`\n[session] ${session.id}`);
 }
@@ -66,7 +69,7 @@ async function resume() {
   if (!id) { console.error(USAGE); process.exit(1); }
   const session = await loadSession(id);
   if (!session) { console.error(`未找到会话 ${id}`); process.exit(1); }
-  const { answer } = await runAgent("", ctx, ctrl.signal, { onEvent: logEvent, session });
+  const { answer } = await runAgent( "", provider, ctx, ctrl.signal, { onEvent: logEvent, session });
   console.log(answer);
 }
 

@@ -2,10 +2,14 @@ import * as readline from "node:readline/promises";
 import { stdin as input, stdout as output, stderr } from "node:process";
 import type { LoopEvent } from "../agent/loop.ts";
 import { runAgent } from "../agent/loop.ts";
+import { createProvider } from "../provider/index.ts";
 import type { SafetyOptions } from "../safety/types.ts";
 import type { Session } from "../session/types.ts";
 import { createSession, listSessions } from "../session/store.ts";
 import { startSpinner, stopSpinner, renderMarkdown, renderToolCall, color } from "./ui.ts";
+
+// Provider 无状态，模块级创建一次即可
+const provider = createProvider();
 
 function onEvent(event: LoopEvent) {
     switch (event.type) {
@@ -115,7 +119,7 @@ export async function repl(
         }
         inFlight = new AbortController();
         startSpinner("思考中...");
-        await runAgent(text, { workspace }, inFlight.signal, {
+        await runAgent(text, provider, { workspace }, inFlight.signal, {
             onEvent,
             safetyOptions: mergedSafety,
             session: currentSession,
