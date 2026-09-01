@@ -157,9 +157,9 @@ export async function runAgent(
     // 执行所有工具调用
     const toolResults = [];
     for (const tc of toolCalls) {
-      collector.startToolCall(tc.name);
       const tool = getTool(tc.name);
       if (!tool) {
+        collector.startToolCall(tc.name);
         const out = `未知工具: ${tc.name}`;
         toolResults.push({ callId: tc.id, output: out });
         collector.endToolCall(false, "deny");
@@ -174,6 +174,7 @@ export async function runAgent(
       const { permission } = await approve(inv, policyPerm, safetyOptions);
 
       if (permission === "deny") {
+        collector.startToolCall(tc.name);
         const out = policyPerm === "deny" ? "[操作被拒] 安全策略拦截" : "[操作被拒] 用户拒绝";
         toolResults.push({ callId: tc.id, output: out });
         collector.endToolCall(false, "deny");
@@ -181,10 +182,12 @@ export async function runAgent(
         continue;
       }
 
+      // 审批通过后才开始计时——durationMs 只含 tool.execute 本身，不含审批等待
+      collector.startToolCall(tc.name);
       const result = await tool.execute(args, ctx);
+      collector.endToolCall(result.ok, permission);
       const output = result.ok ? clipToolOutput(result.output) : `[错误] ${result.error}`;
       toolResults.push({ callId: tc.id, output });
-      collector.endToolCall(result.ok, permission);
       opts.onEvent?.({ type: "tool_result", name: tc.name, output, ok: result.ok });
     }
 
