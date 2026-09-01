@@ -1,7 +1,6 @@
-import type { ChatMessage } from "../config.ts";
-import { chatWithTools, appendToolMessages } from "../provider/openai.ts";
-import { getTool, toOpenAITools } from "../tools/registry.ts";
-import type { ToolContext } from "../tools/types.ts";
+import type { ChatMessage, Provider } from "../provider/index.ts";
+import { appendToolMessages } from "../provider/index.ts";
+import { getTool, toOpenAITools, type ToolContext } from "../tools/index.ts";
 /* feat/context-management
 *----------------------------------------------------------------
 */
@@ -12,15 +11,11 @@ import { estimateMessagesTokens } from "./tokens.ts";
 /* feat/safety-permission
 *----------------------------------------------------------------
 */
-import { checkPolicy } from "../safety/policy.ts";
-import { approve } from "../safety/approver.ts";
-import type { ToolInvocation } from "../safety/types.ts";
-import type { SafetyOptions } from "../safety/types.ts";
+import { checkPolicy, approve, type ToolInvocation, type SafetyOptions } from "../safety/index.ts";
 /* feat/session-persistence
 *----------------------------------------------------------------
 */
-import { saveSession } from "../session/store.ts";
-import type { Session } from "../session/types.ts";
+import { saveSession, type Session } from "../session/index.ts";
 
 const MAX_ROUNDS = 10;
 
@@ -30,6 +25,7 @@ export type LoopEvent =
   | { type: "safety"; kind: "allow" | "ask" | "deny"; tool: string; reason?: string; detail?: string }
   | { type: "tool_result"; name: string; output: string; ok: boolean }
   | { type: "context_compressed"; beforeTokens: number; afterTokens: number }
+  | { type: "text_delta"; delta: string }
   | { type: "answer"; content: string };
 
 export interface LoopOptions {
@@ -62,6 +58,7 @@ function buildSafetyOptions(opts: LoopOptions): SafetyOptions {
 
 export async function runAgent(
   task: string,
+  provider: Provider,
   ctx: ToolContext,
   signal?: AbortSignal,
   opts: LoopOptions = {},
@@ -97,7 +94,7 @@ export async function runAgent(
     const { messages: truncated, compressed } = await truncate(
       messages,
       DEFAULT_CTX,
-      (old) => summarizeMessages(old, signal),
+      (old) => summarizeMessages(provider, old, signal),
     );
     if (compressed) {
       messages = truncated;
@@ -108,11 +105,28 @@ export async function runAgent(
       });
     }
 
-    const { content, toolCalls } = await chatWithTools(messages, tools, signal);
+    // 流式调用：文本增量实时推送，tool_calls 分片按 index 聚合
+    let content = "";
+    const tcMap = new Map<number, { id: string; name: string; arguments: string }>();
+    const stream = await provider.streamChat(messages, tools, signal);
+    for await (const ev of stream) {
+      if (ev.type === "text") {
+        content += ev.delta;
+        opts.onEvent?.({ type: "text_delta", delta: ev.delta });
+      } else if (ev.type === "tool_call_delta") {
+        const agg = tcMap.get(ev.index) ?? { id: "", name: "", arguments: "" };
+        if (ev.id) agg.id = ev.id;
+        if (ev.name) agg.name = ev.name;
+        agg.arguments += ev.argumentsDelta;
+        tcMap.set(ev.index, agg);
+      }
+      // usage 事件暂不消费，留给 Phase 8.3 可观测性
+    }
+    const toolCalls = [...tcMap.values()];
 
     // 没有工具调用 → 返回文本，并把 assistant 回答追加进历史，供后续多轮对话使用
     if (!toolCalls.length) {
-      const finalMessages = [...messages, { role: "assistant", content }];
+      const finalMessages: ChatMessage[] = [...messages, { role: "assistant", content }];
       if(opts.session) {
         opts.session.messages = finalMessages;
         opts.session.state = "done";

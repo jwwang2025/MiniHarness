@@ -1,12 +1,12 @@
-import { registerFileTools } from "./tools/file-tools.ts";
-import { runAgent, type LoopEvent } from "./agent/loop.ts";
-import { createSession, loadSession, listSessions } from "./session/store.ts";
-import type { Session } from "./session/types.ts";
-import { repl } from "./cli/repl.ts";
+import { registerFileTools } from "./tools/index.ts";
+import { runAgent, type LoopEvent } from "./agent/index.ts";
+import { createSession, loadSession, listSessions, type Session } from "./session/index.ts";
+import { repl } from "./cli/index.ts";
 
-import { TASKS } from "./eval/tasks.ts";
-import { runEvalTask, buildReport } from "./eval/runner.ts";
-import { loadBaseline, saveBaseline, compareWithBaseline, formatReport } from "./eval/report.ts";
+import { TASKS, runEvalTask, buildReport, loadBaseline, saveBaseline, compareWithBaseline, formatReport } from "./eval/index.ts";
+
+import { createProvider } from "./provider/index.ts";
+const provider = createProvider();
 
 const [, , cmd, ...rest] = process.argv;
 const ctrl = new AbortController();
@@ -32,7 +32,8 @@ const logEvent = (e: LoopEvent) => {
     case "safety":              console.error(`  [safety:${e.kind}] ${e.tool}${e.detail ? ` ${e.detail}` : ""}`); break;
     case "tool_result":         console.error(`  ${e.ok ? "✓" : "✗"} ${e.name} → ${e.output.slice(0, 100)}${e.output.length > 100 ? "..." : ""}`); break;
     case "context_compressed": console.error(`  [context] ${e.beforeTokens} → ${e.afterTokens} tokens`); break;
-    case "answer":              break; // answer 由主流程打印
+    case "text_delta":          process.stdout.write(e.delta); break; // 流式答案直出 stdout
+    case "answer":              break; // answer 已通过 text_delta 实时打印
   }
 };
 
@@ -42,8 +43,8 @@ async function ask() {
   if (!question) { console.error(USAGE); process.exit(1); }
   const session = await createSession();
   session.title = question.length > 30 ? question.slice(0, 30) + "..." : question;
-  const { answer } = await runAgent(question, ctx, ctrl.signal, { onEvent: logEvent, session });
-  console.log(answer);
+  await runAgent( question, provider, ctx, ctrl.signal, { onEvent: logEvent, session });
+  console.log(); // 答案已流式输出，补换行
   console.error(`\n[session] ${session.id}`);
 }
 
@@ -66,8 +67,8 @@ async function resume() {
   if (!id) { console.error(USAGE); process.exit(1); }
   const session = await loadSession(id);
   if (!session) { console.error(`未找到会话 ${id}`); process.exit(1); }
-  const { answer } = await runAgent("", ctx, ctrl.signal, { onEvent: logEvent, session });
-  console.log(answer);
+  await runAgent( "", provider, ctx, ctrl.signal, { onEvent: logEvent, session });
+  console.log(); // 答案已流式输出，补换行
 }
 
 // sessions：列出所有会话

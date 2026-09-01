@@ -3,25 +3,13 @@ process.loadEnvFile();
 import { z } from "zod";
 
 const env = z.object({
-  MINIHARNESS_API_KEY: z.string().min(1),
-  MINIHARNESS_BASE_URL: z.string().url(),
+  MINIHARNESS_API_KEY: z.string().optional(),
+  MINIHARNESS_BASE_URL: z.string().optional(),
   MINIHARNESS_MODEL: z.string().min(1),
+  MINIHARNESS_PROVIDER: z.enum(["openai","ollama"]).default("openai"),
 }).parse(process.env);
 
-export const apiKey = env.MINIHARNESS_API_KEY;
+export const apiKey = env.MINIHARNESS_API_KEY ?? "";
 export const baseUrl = env.MINIHARNESS_BASE_URL;
 export const model = env.MINIHARNESS_MODEL;
-export type ChatMessage =
-  | { 
-    role: "system" | "user" | "tool"; 
-    content: string 
-  }
-  | { 
-    role: "assistant";
-    content: string; 
-    tool_calls?: Array<{ 
-      id: string; 
-      type: "function";
-      function: { name: string; arguments: string } 
-    }> 
-  };
+export const provider = env.MINIHARNESS_PROVIDER;

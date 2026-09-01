@@ -1,4 +1,4 @@
-import type { ChatMessage } from "../config.ts";
+import type { ChatMessage } from "../provider/index.ts";
 import { estimateMessagesTokens, estimateTokens } from "./tokens.ts";
 
 export interface ContextConfig {

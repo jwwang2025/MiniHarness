@@ -1,4 +1,4 @@
-import type { ChatMessage } from "../config.ts";
+import type { ChatMessage } from "../provider/index.ts";
 
 export interface Session {
     id: string;
