@@ -6,6 +6,7 @@ import { repl } from "./cli/index.ts";
 import { TASKS, runEvalTask, buildReport, loadBaseline, saveBaseline, compareWithBaseline, formatReport } from "./eval/index.ts";
 
 import { createProvider } from "./provider/index.ts";
+import { formatMetrics } from "./telemetry/index.ts";
 const provider = createProvider();
 
 const [, , cmd, ...rest] = process.argv;
@@ -43,9 +44,10 @@ async function ask() {
   if (!question) { console.error(USAGE); process.exit(1); }
   const session = await createSession();
   session.title = question.length > 30 ? question.slice(0, 30) + "..." : question;
-  await runAgent( question, provider, ctx, ctrl.signal, { onEvent: logEvent, session });
+  const result = await runAgent( question, provider, ctx, ctrl.signal, { onEvent: logEvent, session });
   console.log(); // 答案已流式输出，补换行
   console.error(`\n[session] ${session.id}`);
+  console.error(formatMetrics(result.metrics!));
 }
 
 // chat：多轮对话，自动持久化，支持恢复（UI 委托给 cli/repl）
@@ -67,8 +69,9 @@ async function resume() {
   if (!id) { console.error(USAGE); process.exit(1); }
   const session = await loadSession(id);
   if (!session) { console.error(`未找到会话 ${id}`); process.exit(1); }
-  await runAgent( "", provider, ctx, ctrl.signal, { onEvent: logEvent, session });
+  const result = await runAgent( "", provider, ctx, ctrl.signal, { onEvent: logEvent, session });
   console.log(); // 答案已流式输出，补换行
+  console.error(formatMetrics(result.metrics!));
 }
 
 // sessions：列出所有会话

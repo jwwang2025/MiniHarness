@@ -16,6 +16,7 @@ import { checkPolicy, approve, type ToolInvocation, type SafetyOptions } from ".
 *----------------------------------------------------------------
 */
 import { saveSession, type Session } from "../session/index.ts";
+import { TelemetryCollector, type RunMetrics } from "../telemetry/index.ts";
 
 const MAX_ROUNDS = 10;
 
@@ -32,11 +33,13 @@ export interface LoopOptions {
   onEvent?: (e: LoopEvent) => void;
   safetyOptions?: SafetyOptions;
   session?: Session;
+  collector?: TelemetryCollector;
 }
 
 export interface AgentResult {
   answer: string;
   messages: ChatMessage[];
+  metrics?: RunMetrics;
 }
 
 function buildSafetyOptions(opts: LoopOptions): SafetyOptions {
@@ -64,6 +67,11 @@ export async function runAgent(
   opts: LoopOptions = {},
 ): Promise<AgentResult> {
   const safetyOptions = buildSafetyOptions(opts);
+  const collector = opts.collector ?? new TelemetryCollector(
+    task || "(resume)",
+    provider.model,
+    opts.session?.id,
+  );
 
   const isResume = opts.session != null && task === "";
 
@@ -87,6 +95,7 @@ export async function runAgent(
   const tools = toOpenAITools();
 
   for (let round = 0; round < MAX_ROUNDS; round++) {
+    collector.startTurn(round);
     opts.onEvent?.({ type: "thinking", round });
 
     // 上下文压缩：summarize 闭包携带 signal
@@ -106,8 +115,10 @@ export async function runAgent(
     }
 
     // 流式调用：文本增量实时推送，tool_calls 分片按 index 聚合
+    collector.startModelCall();
     let content = "";
     const tcMap = new Map<number, { id: string; name: string; arguments: string }>();
+    let usage: { promptTokens: number; completionTokens: number; totalTokens: number } | undefined;
     const stream = await provider.streamChat(messages, tools, signal);
     for await (const ev of stream) {
       if (ev.type === "text") {
@@ -119,9 +130,15 @@ export async function runAgent(
         if (ev.name) agg.name = ev.name;
         agg.arguments += ev.argumentsDelta;
         tcMap.set(ev.index, agg);
+      } else if (ev.type === "usage") {
+        usage = {
+          promptTokens: ev.usage.promptTokens,
+          completionTokens: ev.usage.completionTokens,
+          totalTokens: ev.usage.totalTokens,
+        };
       }
-      // usage 事件暂不消费，留给 Phase 8.3 可观测性
     }
+    collector.endModelCall(usage);
     const toolCalls = [...tcMap.values()];
 
     // 没有工具调用 → 返回文本，并把 assistant 回答追加进历史，供后续多轮对话使用
@@ -132,15 +149,21 @@ export async function runAgent(
         opts.session.state = "done";
         await saveSession(opts.session);
       }
-      return { answer: content, messages: finalMessages };
+      collector.endTurn();
+      const metrics = collector.finish(true);
+      return { answer: content, messages: finalMessages, metrics };
     }
 
     // 执行所有工具调用
     const toolResults = [];
     for (const tc of toolCalls) {
+      collector.startToolCall(tc.name);
       const tool = getTool(tc.name);
       if (!tool) {
-        toolResults.push({ callId: tc.id, output: `未知工具: ${tc.name}` });
+        const out = `未知工具: ${tc.name}`;
+        toolResults.push({ callId: tc.id, output: out });
+        collector.endToolCall(false, "deny");
+        opts.onEvent?.({ type: "tool_result", name: tc.name, output: out, ok: false });
         continue;
       }
 
@@ -150,16 +173,18 @@ export async function runAgent(
       const policyPerm = checkPolicy(inv, safetyOptions);
       const { permission } = await approve(inv, policyPerm, safetyOptions);
 
-      if(permission === "deny") {
-        const out = policyPerm === "deny"?"[操作被拒] 安全策略拦截":"[操作被拒] 用户拒绝";
+      if (permission === "deny") {
+        const out = policyPerm === "deny" ? "[操作被拒] 安全策略拦截" : "[操作被拒] 用户拒绝";
         toolResults.push({ callId: tc.id, output: out });
+        collector.endToolCall(false, "deny");
         opts.onEvent?.({ type: "tool_result", name: tc.name, output: out, ok: false });
         continue;
       }
-      
+
       const result = await tool.execute(args, ctx);
       const output = result.ok ? clipToolOutput(result.output) : `[错误] ${result.error}`;
       toolResults.push({ callId: tc.id, output });
+      collector.endToolCall(result.ok, permission);
       opts.onEvent?.({ type: "tool_result", name: tc.name, output, ok: result.ok });
     }
 
@@ -185,7 +210,9 @@ export async function runAgent(
       await saveSession(opts.session);
     }
 
+    collector.endTurn();
   }
 
+  collector.finish(false, "达到最大轮数限制");
   throw new Error("达到最大轮数限制");
 }

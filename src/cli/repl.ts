@@ -5,6 +5,7 @@ import { createProvider } from "../provider/index.ts";
 import type { SafetyOptions } from "../safety/index.ts";
 import { createSession, listSessions, type Session } from "../session/index.ts";
 import { startSpinner, stopSpinner, renderToolCall, color } from "./index.ts";
+import { formatMetrics } from "../telemetry/index.ts";
 
 // Provider 无状态，模块级创建一次即可
 const provider = createProvider();
@@ -128,9 +129,10 @@ export async function repl(
             safetyOptions: mergedSafety,
             session: currentSession,
         }).then(
-            () => {
-                // 答案已通过 text_delta 实时输出，这里只补换行
+            (r) => {
+                // 答案已通过 text_delta 实时输出，这里补换行 + 报告
                 output.write("\n");
+                stderr.write(formatMetrics(r.metrics!) + "\n");
             },
             (e) => {
                 if (!inFlight?.signal.aborted) {
