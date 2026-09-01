@@ -1,12 +1,10 @@
 import * as readline from "node:readline/promises";
 import { stdin as input, stdout as output, stderr } from "node:process";
-import type { LoopEvent } from "../agent/loop.ts";
-import { runAgent } from "../agent/loop.ts";
+import { runAgent, type LoopEvent } from "../agent/index.ts";
 import { createProvider } from "../provider/index.ts";
-import type { SafetyOptions } from "../safety/types.ts";
-import type { Session } from "../session/types.ts";
-import { createSession, listSessions } from "../session/store.ts";
-import { startSpinner, stopSpinner, renderMarkdown, renderToolCall, color } from "./ui.ts";
+import type { SafetyOptions } from "../safety/index.ts";
+import { createSession, listSessions, type Session } from "../session/index.ts";
+import { startSpinner, stopSpinner, renderMarkdown, renderToolCall, color } from "./index.ts";
 
 // Provider 无状态，模块级创建一次即可
 const provider = createProvider();

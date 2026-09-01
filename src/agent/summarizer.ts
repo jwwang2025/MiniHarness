@@ -1,5 +1,4 @@
-import type { ChatMessage } from "../provider/types.ts";
-import { Provider } from "../provider/index.ts";
+import type { ChatMessage, Provider } from "../provider/index.ts";
 
 export async function summarizeMessages(
     provider: Provider,

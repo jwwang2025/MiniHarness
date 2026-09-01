@@ -1,6 +1,6 @@
-import { Provider, ChatMessage, chatWithTools, appendToolMessages } from "../provider/index.ts";
-import { getTool, toOpenAITools } from "../tools/registry.ts";
-import type { ToolContext } from "../tools/types.ts";
+import type { ChatMessage, Provider } from "../provider/index.ts";
+import { appendToolMessages } from "../provider/index.ts";
+import { getTool, toOpenAITools, type ToolContext } from "../tools/index.ts";
 /* feat/context-management
 *----------------------------------------------------------------
 */
@@ -11,15 +11,11 @@ import { estimateMessagesTokens } from "./tokens.ts";
 /* feat/safety-permission
 *----------------------------------------------------------------
 */
-import { checkPolicy } from "../safety/policy.ts";
-import { approve } from "../safety/approver.ts";
-import type { ToolInvocation } from "../safety/types.ts";
-import type { SafetyOptions } from "../safety/types.ts";
+import { checkPolicy, approve, type ToolInvocation, type SafetyOptions } from "../safety/index.ts";
 /* feat/session-persistence
 *----------------------------------------------------------------
 */
-import { saveSession } from "../session/store.ts";
-import type { Session } from "../session/types.ts";
+import { saveSession, type Session } from "../session/index.ts";
 
 const MAX_ROUNDS = 10;
 

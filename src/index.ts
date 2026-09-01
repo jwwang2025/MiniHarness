@@ -1,12 +1,9 @@
-import { registerFileTools } from "./tools/file-tools.ts";
-import { runAgent, type LoopEvent } from "./agent/loop.ts";
-import { createSession, loadSession, listSessions } from "./session/store.ts";
-import type { Session } from "./session/types.ts";
-import { repl } from "./cli/repl.ts";
+import { registerFileTools } from "./tools/index.ts";
+import { runAgent, type LoopEvent } from "./agent/index.ts";
+import { createSession, loadSession, listSessions, type Session } from "./session/index.ts";
+import { repl } from "./cli/index.ts";
 
-import { TASKS } from "./eval/tasks.ts";
-import { runEvalTask, buildReport } from "./eval/runner.ts";
-import { loadBaseline, saveBaseline, compareWithBaseline, formatReport } from "./eval/report.ts";
+import { TASKS, runEvalTask, buildReport, loadBaseline, saveBaseline, compareWithBaseline, formatReport } from "./eval/index.ts";
 
 import { createProvider } from "./provider/index.ts";
 const provider = createProvider();

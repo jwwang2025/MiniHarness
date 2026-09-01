@@ -1,9 +1,8 @@
 import { exec } from "node:child_process";
 import { promisify } from "node:util";
-import { runAgent } from "../agent/loop.ts";
-import { estimateMessagesTokens } from "../agent/tokens.ts";
+import { runAgent, estimateMessagesTokens } from "../agent/index.ts";
 import { createProvider } from "../provider/index.ts";
-import type { EvalTask, EvalResult, EvalReport } from "./types.ts";
+import type { EvalTask, EvalResult, EvalReport } from "./index.ts";
 
 const execP = promisify(exec);
 const TIMEOUT_MS = 60_000;
