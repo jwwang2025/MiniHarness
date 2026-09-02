@@ -2,6 +2,7 @@ import { exec } from "node:child_process";
 import { promisify } from "node:util";
 import { runAgent, estimateMessagesTokens } from "../agent/index.ts";
 import { createProvider } from "../provider/index.ts";
+import { estimateCostUsd } from "../telemetry/index.ts";
 import type { EvalTask, EvalResult, EvalReport } from "./index.ts";
 
 const execP = promisify(exec);
@@ -9,17 +10,6 @@ const TIMEOUT_MS = 60_000;
 
 // Provider 无状态，模块级创建一次即可
 const provider = createProvider();
-
-const PRICING: Record<string, number> = {
-  "deepseek-chat": 0.14,
-  "deepseek-reasoner": 0.55,
-  "gpt-4o": 2.50,
-  "gpt-4o-mini": 0.15,
-};
-
-export function estimateCost(tokens: number): number {
-  return (tokens / 1_000_000) * (PRICING[provider.model] ?? 0);
-}
 
 async function verify(task: EvalTask, answer: string, workspace: string): Promise<boolean> {
     const v = task.verify;
@@ -55,7 +45,7 @@ export async function runEvalTask(task: EvalTask, workspace: string): Promise<Ev
             answer: res.answer,
             rounds,
             tokens: totalTokens,
-            cost: estimateCost(totalTokens),
+            cost: estimateCostUsd(provider.model, 0, totalTokens),
             durationMs: Date.now() - startTime,
         } satisfies EvalResult;
     }).catch((e) => ({
