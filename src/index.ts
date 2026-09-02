@@ -1,4 +1,4 @@
-import { registerFileTools } from "./tools/index.ts";
+import { registerFileTools, register } from "./tools/index.ts";
 import { runAgent, type LoopEvent } from "./agent/index.ts";
 import { createSession, loadSession, listSessions, type Session } from "./session/index.ts";
 import { repl } from "./cli/index.ts";
@@ -7,6 +7,8 @@ import { TASKS, runEvalTask, buildReport, loadBaseline, saveBaseline, compareWit
 
 import { createProvider } from "./provider/index.ts";
 import { formatMetrics } from "./telemetry/index.ts";
+import { MCPClient, registerMCPTools } from "./mcp/index.ts";
+import { mcpServers } from "./config.ts";
 const provider = createProvider();
 
 const [, , cmd, ...rest] = process.argv;
@@ -18,6 +20,21 @@ process.on("SIGINT", () => {
 
 registerFileTools();
 const ctx = { workspace: process.cwd() };
+
+// 启动 MCP 服务器并注册工具（失败不阻塞主流程）
+const mcpClients: MCPClient[] = [];
+for (const cfg of mcpServers) {
+  const client = new MCPClient(cfg.name, cfg.command, cfg.args);
+  try {
+    await client.start();
+    const count = await registerMCPTools(client, register);
+    console.error(`[MCP] ${cfg.name}: ${count} 个工具就绪`);
+    mcpClients.push(client);
+  } catch (e) {
+    console.error(`[MCP] ${cfg.name} 启动失败，跳过: ${e}`);
+  }
+}
+process.on("exit", () => mcpClients.forEach((c) => c.stop()));
 
 const USAGE = `用法:
   pnpm dev ask "你的问题"          # 单轮任务（自动建会话）
