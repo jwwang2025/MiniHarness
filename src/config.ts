@@ -6,14 +6,27 @@ export interface MCPServerConfig {
   name: string;
   command: string;
   args: string[];
+  env: Record<string, string>;
 }
 
+// 单个服务器格式：<名字>:<启动命令> [参数...] [|KEY=VAL KEY=VAL...]
+// 竖线后为透传给服务器的环境变量（如 API key、存储路径）；${workspace} 会替换为当前工作目录
 function parseMCPServers(raw?: string): MCPServerConfig[] {
   if (!raw) return [];
+  const workspace = process.cwd();
+  const expand = (s: string) => s.replaceAll("${workspace}", workspace);
   return raw.split(";").filter(Boolean).map((s) => {
-    const [name, ...rest] = s.split(":");
-    const parts = rest.join(":").trim().split(/\s+/);
-    return { name: name.trim(), command: parts[0] || "", args: parts.slice(1) };
+    const [cmdPart, envPart] = s.split("|");
+    const [name, ...rest] = cmdPart.split(":");
+    const parts = expand(rest.join(":")).trim().split(/\s+/).filter(Boolean);
+    const env: Record<string, string> = {};
+    if (envPart) {
+      for (const token of envPart.trim().split(/\s+/).filter(Boolean)) {
+        const eq = token.indexOf("=");
+        if (eq > 0) env[token.slice(0, eq)] = expand(token.slice(eq + 1));
+      }
+    }
+    return { name: name.trim(), command: parts[0] || "", args: parts.slice(1), env };
   });
 }
 
