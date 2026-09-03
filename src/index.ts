@@ -24,7 +24,7 @@ const ctx = { workspace: process.cwd() };
 // 启动 MCP 服务器并注册工具（失败不阻塞主流程）
 const mcpClients: MCPClient[] = [];
 for (const cfg of mcpServers) {
-  const client = new MCPClient(cfg.name, cfg.command, cfg.args);
+  const client = new MCPClient(cfg.name, cfg.command, cfg.args, cfg.env);
   try {
     await client.start();
     const count = await registerMCPTools(client, register);

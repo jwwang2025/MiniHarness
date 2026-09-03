@@ -34,12 +34,14 @@ export class MCPClient {
         private serverName: string,
         private command: string,
         private args: string[] = [],
+        private env: Record<string, string> = {},
     ) {}
 
     async start(): Promise<void> {
         this.process = spawn(this.command, this.args, {
             stdio: ["pipe", "pipe", "pipe"],
             shell: process.platform === "win32",
+            env: { ...process.env, ...this.env },
         });
 
         this.process.stdout!.setEncoding("utf-8");

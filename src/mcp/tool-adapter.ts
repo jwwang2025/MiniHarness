@@ -7,7 +7,7 @@ export function createMCPTool(
     mcpTool: MCPTool
 ): Tool {
     return  {
-        name: `mcp:${serverName}_${mcpTool.name}`,
+        name: `mcp__${serverName}__${mcpTool.name}`,
         description: mcpTool.description,
         inputSchema: mcpTool.inputSchema,
 
