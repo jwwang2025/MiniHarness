@@ -41,23 +41,17 @@ export class OpenAIProvider implements Provider {
     tools: ChatTool[],
     signal?: AbortSignal,
   ): Promise<AsyncIterable<StreamEvent>> {
-    const res = await fetch(`${this.config.baseUrl}/chat/completions`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${this.config.apiKey}`,
-      },
-      body: JSON.stringify({
-        model: this.model,
+    const res = await this.post(
+      {
         messages,
         ...(tools.length ? { tools } : {}),   // 空工具列表不下发，避免部分 API 报错
         stream: true,
         stream_options: { include_usage: true }, // 最后一个 chunk 携带 usage
-      }),
-      signal: signal ?? null,
-    });
-    if (!res.ok || !res.body) {
-      throw new Error(`API error: ${res.status} ${await res.text()}`);
+      },
+      signal,
+    );
+    if (!res.body) {
+      throw new Error(`API error: response body is empty`);
     }
     return this.parseSSE(res.body);
   }
