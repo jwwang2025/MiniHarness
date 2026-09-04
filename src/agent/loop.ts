@@ -34,6 +34,7 @@ export interface LoopOptions {
   safetyOptions?: SafetyOptions;
   session?: Session;
   collector?: TelemetryCollector;
+  maxRounds?: number;
 }
 
 export interface AgentResult {

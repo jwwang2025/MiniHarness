@@ -7,6 +7,7 @@ export interface Tool<P = unknown> {
 
 export interface ToolContext {
   workspace: string;
+  allowedTools?: Set<string>;
 }
 
 export type ToolResult =

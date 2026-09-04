@@ -51,6 +51,7 @@ export interface Provider {
     tools: ChatTool[],
     signal?: AbortSignal
   ): Promise<ChatResult>;
+  
   // 流式：产出结构化事件，tool_calls 分片由消费方按 index 聚合
   streamChat(
     messages: ChatMessage[],
