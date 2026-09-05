@@ -5,7 +5,7 @@ import type { SubTask, SubTaskResult, SubAgentOptions, DecompositionResult } fro
 import { decomposeTask } from "./decomposer.ts";
 
 const MAX_PARALLEL = 3;
-const MAX_ROUNDS = 5;
+const MAX_ROUNDS = 100;
 
 const SUMMARIZE_PROMPT = `你是一个结果汇总专家。根据多个子任务的执行结果，给出最终回答。
 
@@ -63,6 +63,7 @@ async function runSubTask(
   try {
     const result = await runAgent(fullTask, provider, subCtx, undefined, {
       maxRounds,
+      safetyOptions: { autoApprove: true },
     });
     return {
       taskId: task.id,

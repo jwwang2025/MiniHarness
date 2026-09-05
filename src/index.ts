@@ -111,7 +111,6 @@ async function subagent() {
   console.error("🔍 正在分解任务...");
   const { finalAnswer, results } = await runSubAgentMode(task, provider, ctx, {
     maxParallel: 3,
-    maxRoundsPerTask: 5,
     onDecomposed: (plan, count) => {
       console.error(`\n📋 分解为 ${count} 个子任务`);
       console.error(`   计划: ${plan}`);
