@@ -1,5 +1,6 @@
 import { registerFileTools, register } from "./tools/index.ts";
 import { runAgent, type LoopEvent } from "./agent/index.ts";
+import { runSubAgentMode } from "./agent/subagent/index.ts";
 import { createSession, loadSession, listSessions, type Session } from "./session/index.ts";
 import { repl } from "./cli/index.ts";
 
@@ -41,6 +42,7 @@ const USAGE = `用法:
   pnpm dev chat                     # 多轮对话（自动持久化，:exit 退出）
   pnpm dev chat <sessionId>         # 恢复会话继续对话
   pnpm dev resume <sessionId>       # 断点续跑（恢复中断的 agent 循环）
+  pnpm dev subagent "任务描述"      # 子代理模式：自动分解并并行执行
   pnpm dev sessions                 # 列出所有会话`;
 
 const logEvent = (e: LoopEvent) => {
@@ -101,6 +103,43 @@ async function sessions() {
   }
 }
 
+// subagent：子代理模式 —— 自动分解任务 → 并行执行 → 汇总结果
+async function subagent() {
+  const task = rest.join(" ").trim();
+  if (!task) { console.error(USAGE); process.exit(1); }
+
+  console.error("🔍 正在分解任务...");
+  const { finalAnswer, results } = await runSubAgentMode(task, provider, ctx, {
+    maxParallel: 3,
+    maxRoundsPerTask: 5,
+    onDecomposed: (plan, count) => {
+      console.error(`\n📋 分解为 ${count} 个子任务`);
+      console.error(`   计划: ${plan}`);
+    },
+    onTaskStart: ({ id, title }) => {
+      console.error(`\n  ▶ [${id}] 开始: ${title}`);
+    },
+    onTaskDone: (r) => {
+      const icon = r.success ? "✓" : "✗";
+      const color = r.success ? "\x1b[32m" : "\x1b[31m";
+      const reset = "\x1b[0m";
+      console.error(`  ${color}${icon}${reset} [${r.taskId}] ${r.title} (${r.durationMs}ms)`);
+      if (!r.success) {
+        console.error(`     错误: ${r.error}`);
+      }
+    },
+  });
+
+  console.error(`\n${"=".repeat(50)}`);
+  console.error("📝 子任务明细:");
+  for (const r of results) {
+    const status = r.success ? "✅" : "❌";
+    console.error(`  ${status} ${r.title} (${r.durationMs}ms)`);
+  }
+  console.error(`${"=".repeat(50)}\n`);
+  console.log(finalAnswer);
+}
+
 // eval：跑评测集，可选 --save 存为新基线
 async function eval_() {
     const isSaveBaseline = rest[0] === "--save";
@@ -125,6 +164,6 @@ async function eval_() {
     
 }
 
-const commands: Record<string, () => Promise<void>> = { ask, chat, resume, sessions, eval: eval_ };
+const commands: Record<string, () => Promise<void>> = { ask, chat, resume, sessions, subagent, eval: eval_ };
 await (commands[cmd] ?? (() => { console.error(USAGE); process.exit(1); }))();
  

@@ -93,9 +93,15 @@ export async function runAgent(
     messages = [sysMsg, { role: "user", content: task }];
   }
 
-  const tools = toOpenAITools();
+  const maxRounds = opts.maxRounds ?? MAX_ROUNDS;
 
-  for (let round = 0; round < MAX_ROUNDS; round++) {
+  // 工具过滤：子任务可通过 ctx.allowedTools 限制可见工具集
+  const allTools = toOpenAITools();
+  const tools = ctx.allowedTools
+    ? allTools.filter(t => ctx.allowedTools!.has(t.function.name))
+    : allTools;
+
+  for (let round = 0; round < maxRounds; round++) {
     collector.startTurn(round);
     opts.onEvent?.({ type: "thinking", round });
 
@@ -159,9 +165,10 @@ export async function runAgent(
     const toolResults = [];
     for (const tc of toolCalls) {
       const tool = getTool(tc.name);
-      if (!tool) {
+      const blocked = ctx.allowedTools && !ctx.allowedTools.has(tc.name);
+      if (!tool || blocked) {
         collector.startToolCall(tc.name);
-        const out = `未知工具: ${tc.name}`;
+        const out = !tool ? `未知工具: ${tc.name}` : `工具被限制: ${tc.name}`;
         toolResults.push({ callId: tc.id, output: out });
         collector.endToolCall(false, "deny");
         opts.onEvent?.({ type: "tool_result", name: tc.name, output: out, ok: false });
