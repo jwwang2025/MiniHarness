@@ -9,7 +9,7 @@ import { TASKS, runEvalTask, buildReport, loadBaseline, saveBaseline, compareWit
 import { createProvider } from "./provider/index.ts";
 import { formatMetrics } from "./telemetry/index.ts";
 import { MCPClient, registerMCPTools } from "./mcp/index.ts";
-import { mcpServers } from "./config.ts";
+import { mcpServersRaw, parseMCPServers } from "./config.ts";
 const provider = createProvider();
 
 const [, , cmd, ...rest] = process.argv;
@@ -19,8 +19,23 @@ process.on("SIGINT", () => {
   process.exit(130);
 });
 
+// 解析 --workspace 参数
+function parseWorkspace(): string {
+  for (let i = 0; i < rest.length; i++) {
+    if (rest[i] === "--workspace" && rest[i + 1]) {
+      const ws = rest[i + 1];
+      rest.splice(i, 2);
+      return ws;
+    }
+  }
+  return process.cwd();
+}
+
 registerFileTools();
-const ctx = { workspace: process.cwd() };
+const workspace = parseWorkspace();
+process.chdir(workspace);
+const ctx = { workspace };
+const mcpServers = parseMCPServers(mcpServersRaw, workspace);
 
 // 启动 MCP 服务器并注册工具（失败不阻塞主流程）
 const mcpClients: MCPClient[] = [];
@@ -43,7 +58,10 @@ const USAGE = `用法:
   pnpm dev chat <sessionId>         # 恢复会话继续对话
   pnpm dev resume <sessionId>       # 断点续跑（恢复中断的 agent 循环）
   pnpm dev subagent "任务描述"      # 子代理模式：自动分解并并行执行
-  pnpm dev sessions                 # 列出所有会话`;
+  pnpm dev sessions                 # 列出所有会话
+
+选项:
+  --workspace <路径>                # 指定工作目录（默认当前目录）`;
 
 const logEvent = (e: LoopEvent) => {
   switch (e.type) {
@@ -142,7 +160,7 @@ async function subagent() {
 // eval：跑评测集，可选 --save 存为新基线
 async function eval_() {
     const isSaveBaseline = rest[0] === "--save";
-    const workspace = process.cwd();
+    const workspace = ctx.workspace;
     const results = [];
     for (const task of TASKS) {
         const result = await runEvalTask(task, workspace);
