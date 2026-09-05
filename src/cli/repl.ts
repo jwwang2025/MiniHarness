@@ -1,6 +1,7 @@
 import * as readline from "node:readline/promises";
 import { stdin as input, stdout as output, stderr } from "node:process";
 import { runAgent, type LoopEvent } from "../agent/index.ts";
+import { runSubAgentMode } from "../agent/subagent/index.ts";
 import { createProvider } from "../provider/index.ts";
 import type { SafetyOptions } from "../safety/index.ts";
 import { createSession, listSessions, type Session } from "../session/index.ts";
@@ -57,7 +58,7 @@ export async function repl(
     const mergedSafety: SafetyOptions = { ...safetyOptions, promptFn };
 
     let currentSession: Session = session ?? await createSession();
-    console.log(`${color.bold("MiniHarness")} ${color.gray("REPL")} — :help 帮助，:exit 退出`);
+    console.log(`${color.bold("MiniHarness")} ${color.gray("REPL")} — :help 帮助，:exit 退出，:sub <任务> 子代理模式`);
     console.log(`session: ${color.cyan(currentSession.id)}`);
 
     let inFlight: AbortController | null = null;
@@ -84,7 +85,7 @@ export async function repl(
 
     const handleColonCommand = async (text: string): Promise<void> => {
         if (text === ":help") {
-            console.log(":exit 退出 | :reset 新建会话 | :sessions 列表");
+            console.log(":exit 退出 | :reset 新建会话 | :sessions 列表 | :sub <任务> 子代理模式");
             return;
         }
         if (text === ":reset") {
@@ -116,6 +117,36 @@ export async function repl(
         if (!text) return;
         if (text === ":exit" || text === ":quit") {
             exitWithHint();
+            return;
+        }
+        if (text.startsWith(":sub ")) {
+            const subTask = text.slice(5).trim();
+            if (!subTask) { stderr.write("  用法: :sub <任务描述>\n"); return; }
+            inFlight = new AbortController();
+            stderr.write("🔍 正在分解任务...\n");
+            await runSubAgentMode(subTask, provider, { workspace }, {
+                maxParallel: 3,
+                onDecomposed: (plan, count) => {
+                    stderr.write(`\n📋 分解为 ${count} 个子任务\n   计划: ${plan}\n`);
+                },
+                onTaskStart: ({ id, title }) => stderr.write(`\n  ▶ [${id}] 开始: ${title}\n`),
+                onTaskDone: (r) => {
+                    const icon = r.success ? color.green("✓") : color.red("✗");
+                    stderr.write(`  ${icon} [${r.taskId}] ${r.title} (${r.durationMs}ms)\n`);
+                    if (!r.success) stderr.write(`     ${color.red(`错误: ${r.error}`)}\n`);
+                },
+            }).then(
+                (r) => {
+                    output.write("\n");
+                    const ok = r.results.filter(r => r.success).length;
+                    const fail = r.results.length - ok;
+                    stderr.write(`\n${"=".repeat(50)}\n`);
+                    stderr.write(`子任务: ${color.green(`${ok} 成功`)}${fail ? ` / ${color.red(`${fail} 失败`)}` : ""}\n`);
+                    stderr.write(`${"=".repeat(50)}\n\n`);
+                    output.write(r.finalAnswer + "\n");
+                },
+                (e) => stderr.write(`\n  ${color.red(`错误: ${e}`)}\n`),
+            ).finally(() => { inFlight = null; });
             return;
         }
         if (text.startsWith(":")) {
