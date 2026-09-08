@@ -1,144 +1,350 @@
-# Phase 9：进阶能力技术文档（含代码）
+# Phase 9：从「框架」到「编码工作流引擎」（含代码）
 
-> 适用阶段：已完成 Phase 0-8（核心循环 + 工具 + 上下文 + 安全 + 会话 + 评测 + 多 Provider + 可观测性 + MCP + 子代理）
-> 目标：让 MiniHarness 从「框架」进化到「开发者工具」
-> 原则：每个子阶段独立可验收，完成一个再进下一个
+> 参考 Claude Code 和 OpenCode 的核心能力，合并原 Phase 9 和 Phase 10 的内容
+> 原则：轻量化（代码简洁不冗余，可以建子目录）、可扩展（接口优先）、零新依赖
+> 前置条件：已完成 Phase 0-8
 
 ---
 
 ## 目录
 
-- [Phase 9.0 总览](#phase-90-总览)
-- [Phase 9.1 增强工具集](#phase-91-增强工具集)
-- [Phase 9.2 RAG 语义检索](#phase-92-rag-语义检索)
-- [Phase 9.3 自动测试与修复循环](#phase-93-自动测试与修复循环)
-- [Phase 9.4 插件系统](#phase-94-插件系统)
-- [Phase 9.5 HTTP API 服务](#phase-95-http-api-服务)
+- [总览](#总览)
+- [9.1 Hook 生命周期系统](#91-hook-生命周期系统)
+- [9.2 项目记忆文件](#92-项目记忆文件)
+- [9.3 增强工具集（MCP 复用）](#93-增强工具集mcp-复用)
+- [9.4 Git 集成工具](#94-git-集成工具)
+- [9.5 死循环检测与重试](#95-死循环检测与重试)
+- [9.6 自定义命令](#96-自定义命令)
+- [9.7 自动测试与修复循环](#97-自动测试与修复循环)
+- [9.8 HTTP API 服务](#98-http-api-服务)
 
 ---
 
-## Phase 9.0 总览
+## 总览
 
-Phase 8 完成后，你有了完整的框架骨架。但回到实际使用场景，还缺几个关键能力：
+Phase 8 完成后，MiniHarness 有了完整骨架。对比 Claude Code 和 OpenCode，核心短板是：
 
-| 缺什么 | 做了之后 |
-|--------|---------|
-| 只有 read/write/list，没法搜索代码 | grep 工具 + diff 编辑工具 + shell 执行 |
-| Agent 只能靠翻文件找代码，不知道语义 | 代码库向量化，语义检索一步到位 |
-| 改完代码不知道对不对，要手动跑测试 | Agent 自己跑测试、分析失败、自动修复 |
-| 加工具只能改源码重新启动 | 插件系统，热加载外部工具包 |
-| 只能命令行用，没法集成到其他系统 | HTTP API，其他程序能调用你的 Agent |
+| 缺什么 | 做了之后 | 参考来源 |
+|--------|---------|---------|
+| 没有 Hook，无法插拔工具逻辑 | 不改 loop.ts 就能扩展审计/格式化/诊断 | Claude Code hooks [$TRAE_REF](https://code.claude.com/docs/en/hooks-guide) |
+| 每次会话从零开始，不知道项目约定 | AGENTS.md 自动加载+压缩后重注入 | Claude Code CLAUDE.md [$TRAE_REF](https://code.claude.com/docs/en/memory) |
+| 只有 read/write/list，没法搜索代码 | MCP filesystem 搜索+编辑+shell 执行 | OpenCode tools [$TRAE_REF](https://opencode.ai/docs/tools) |
+| Agent 不能自动提交代码 | git-status / git-diff / git-commit | Claude Code git workflow |
+| Agent 可能死循环，API 失败不重试 | doom-loop 检测 + 指数退避重试 | OpenCode doom_loop [$TRAE_REF](https://opencode.ai/docs/permissions) |
+| 用户无法定义自己的工作流 | `:test` `:review` 等自定义命令 | OpenCode commands [$TRAE_REF](https://opencode.ai/docs/commands) |
+| 改完代码不知道对不对 | Agent 自己跑测试、分析失败、自动修复 | Claude Code auto-test |
+| 只能命令行用，没法集成到其他系统 | HTTP API，SSE 流式输出 | OpenCode client/server |
 
 ### 子阶段依赖关系
 
 ```
-9.1 增强工具集（grep/edit/shell）  ←  地基，后续都依赖
-         │
-    ┌────┴────┐
-    ▼         ▼
-9.2 RAG    9.3 自动测试与修复
-    │         │
-    └────┬────┘
-         ▼
-    9.4 插件系统
-         │
-         ▼
-    9.5 HTTP API
+9.1 Hook 系统 ← 地基，后续都依赖
+    │
+    ├── 9.2 项目记忆（Hook: SessionStart 加载）
+    ├── 9.3 增强工具集（Hook: PostToolUse 诊断）
+    ├── 9.4 Git 工具
+    ├── 9.5 死循环检测（Hook: PreToolUse 拦截）
+    │
+    └── 9.6 自定义命令
+            │
+            └── 9.7 自动测试与修复
+                    │
+                    └── 9.8 HTTP API
 ```
 
-> **建议顺序**：9.1 必须先做（后续阶段的新工具都要注册到 registry），9.2 和 9.3 可以并行，9.4 需要前面都完成，9.5 放最后。
+### 建议顺序
+
+9.1 必须先做（后续阶段都通过 Hook 接入）。9.2-9.5 可以并行。9.6-9.8 按顺序。
 
 ---
 
-## Phase 9.1 增强工具集
+## 9.1 Hook 生命周期系统
 
-**目标**：补齐 Agent 的「眼睛和手」——搜索、精确编辑、执行命令。
+**目标**：在工具执行前/后插入可插拔的钩子函数。
 
-**你将学到**：MCP 生态复用、命令白名单安全模型、安全策略配置。
+**参考**：Claude Code 的 PreToolUse/PostToolUse [$TRAE_REF](https://code.claude.com/docs/en/hooks-guide)，OpenCode 的 `tool.execute.before`/`tool.execute.after`。
 
-**特点**：本阶段**零手写代码**，全部通过 MCP 服务器配置实现。
+### 设计思路
 
-### 为什么最先做
+Claude Code 用 shell 命令做钩子（JSON 配置驱动），MiniHarness 用 TypeScript 函数做钩子（代码驱动），更轻量、更类型安全。OpenCode 的钩子接口返回可修改的 output 对象 [$TRAE_REF](https://opencode.ai/docs/plugins)，MiniHarness 借鉴这个设计。
 
-现在 Agent 只有 read-file / write-file / list-dir 三个工具。实际编码任务中 Agent 需要：
+### 具体步骤
 
-- **搜索**：在几百个文件里找某个函数定义 → 需要搜索工具
-- **精确编辑**：只改第 10 行而不是重写整个文件 → 需要编辑工具
-- **执行命令**：跑测试、装依赖、格式化代码 → 需要 shell 工具
+#### 第 1 步：定义类型
 
-这三个能力是后续所有阶段的基础。
+新建 `src/hooks/types.ts`：
 
-### 设计思路：全部走 MCP，零手写代码
+```ts
+export interface PreToolUseContext {
+  toolName: string;
+  args: Record<string, unknown>;
+  workspace: string;
+}
 
-你的项目在 Phase 8 已经接入了 MCP 协议。搜索和编辑用已有的 filesystem MCP 服务器，shell 执行用社区最成熟的 mcp-shell-server。
+export interface PostToolUseContext {
+  toolName: string;
+  args: Record<string, unknown>;
+  result: { ok: boolean; output?: string; error?: string };
+  workspace: string;
+}
+
+export type HookAction =
+  | { type: "continue" }
+  | { type: "deny"; reason: string }
+  | { type: "modify"; patch: Record<string, unknown> }
+  | { type: "append"; extraOutput: string };
+
+export type PreToolUseHook = (ctx: PreToolUseContext) => HookAction | Promise<HookAction>;
+export type PostToolUseHook = (ctx: PostToolUseContext) => void | Promise<void>;
+```
+
+#### 第 2 步：注册表
+
+新建 `src/hooks/registry.ts`：
+
+```ts
+import type { PreToolUseHook, PostToolUseHook, HookAction } from "./types.ts";
+
+const preHooks: PreToolUseHook[] = [];
+const postHooks: PostToolUseHook[] = [];
+
+export function onPreToolUse(hook: PreToolUseHook) {
+  preHooks.push(hook);
+  return () => {
+    const i = preHooks.indexOf(hook);
+    if (i >= 0) preHooks.splice(i, 1);
+  };
+}
+
+export function onPostToolUse(hook: PostToolUseHook) {
+  postHooks.push(hook);
+  return () => {
+    const i = postHooks.indexOf(hook);
+    if (i >= 0) postHooks.splice(i, 1);
+  };
+}
+
+export async function runPreToolUse(ctx: {
+  toolName: string;
+  args: Record<string, unknown>;
+  workspace: string;
+}): Promise<HookAction> {
+  for (const hook of preHooks) {
+    const action = await hook(ctx);
+    if (action.type === "deny") return action;
+    if (action.type === "modify") Object.assign(ctx.args, action.patch);
+  }
+  return { type: "continue" };
+}
+
+export async function runPostToolUse(ctx: {
+  toolName: string;
+  args: Record<string, unknown>;
+  result: { ok: boolean; output?: string; error?: string };
+  workspace: string;
+}) {
+  for (const hook of postHooks) {
+    await hook(ctx);
+  }
+}
+
+export function clearHooks() {
+  preHooks.length = 0;
+  postHooks.length = 0;
+}
+```
+
+#### 第 3 步：Barrel export
+
+新建 `src/hooks/index.ts`：
+
+```ts
+export type { PreToolUseContext, PostToolUseContext, HookAction, PreToolUseHook, PostToolUseHook } from "./types.ts";
+export { onPreToolUse, onPostToolUse, runPreToolUse, runPostToolUse, clearHooks } from "./registry.ts";
+```
+
+#### 第 4 步：在 agent loop 中接入
+
+修改 `src/agent/loop.ts`，在工具执行前/后插入钩子调用：
+
+```ts
+import { runPreToolUse, runPostToolUse } from "../hooks/index.ts";
+
+// 在安全检查之后、工具执行之前：
+const preAction = await runPreToolUse({ toolName, args, workspace });
+if (preAction.type === "deny") {
+  const msg = `Hook denied: ${preAction.reason}`;
+  onEvent?.({ type: "tool_result", name: toolName, ok: false, output: msg });
+  messages.push({ role: "tool", tool_call_id: call.id, content: msg });
+  continue;
+}
+
+// 执行工具（已有代码）
+const result = await tool.execute(args, { workspace });
+
+// 工具执行之后
+await runPostToolUse({ toolName, args, result, workspace });
+```
+
+#### 第 5 步：审计钩子示例
+
+在 `src/index.ts` 中注册：
+
+```ts
+import { onPostToolUse } from "./hooks/index.ts";
+
+onPostToolUse(({ toolName, result }) => {
+  const ts = new Date().toISOString();
+  const status = result.ok ? "OK" : "FAIL";
+  const detail = result.ok ? result.output?.slice(0, 80) : result.error?.slice(0, 80);
+  console.error(`[audit] ${ts} ${toolName} ${status} ${detail ?? ""}`);
+});
+```
+
+### 验收标准
+
+- [ ] `onPreToolUse` 返回 `{ type: "deny" }` 时阻止执行，Agent 收到原因
+- [ ] `onPostToolUse` 在工具执行后被调用
+- [ ] 钩子注册返回取消函数，调用后不再触发
+- [ ] 不注册任何钩子时，行为和之前完全一致
+
+---
+
+## 9.2 项目记忆文件
+
+**目标**：Agent 启动时自动读取 `AGENTS.md`，把项目约定注入系统提示词。
+
+**参考**：Claude Code 的 CLAUDE.md [$TRAE_REF](https://code.claude.com/docs/en/memory)。Claude Code 在会话启动时加载 CLAUDE.md，压缩后通过 SessionStart 钩子重新注入。
+
+### 设计思路
+
+| | Claude Code | MiniHarness |
+|---|---|---|
+| 文件名 | CLAUDE.md | AGENTS.md |
+| 加载时机 | 会话启动 + 压缩后重注入 | 同左 |
+| 大小限制 | 200 行 / 25KB | 100 行 / 10KB |
+| 注入位置 | system prompt 尾部 | 同左 |
+
+### 具体步骤
+
+#### 第 1 步：记忆加载器
+
+新建 `src/agent/memory.ts`：
+
+```ts
+import { readFile } from "node:fs/promises";
+import { join } from "node:path";
+
+const MAX_LINES = 100;
+const MAX_BYTES = 10_000;
+
+export async function loadProjectMemory(workspace: string): Promise<string> {
+  const path = join(workspace, "AGENTS.md");
+  try {
+    let content = await readFile(path, "utf-8");
+    const lines = content.split("\n");
+    if (lines.length > MAX_LINES)
+      content = lines.slice(0, MAX_LINES).join("\n") + "\n...(AGENTS.md 已截断)";
+    if (content.length > MAX_BYTES)
+      content = content.slice(0, MAX_BYTES) + "\n...(AGENTS.md 已截断)";
+    return content.trim();
+  } catch {
+    return "";
+  }
+}
+
+export function buildSystemPromptWithMemory(base: string, memory: string): string {
+  return memory ? `${base}\n\n# 项目约定（来自 AGENTS.md）\n${memory}` : base;
+}
+```
+
+#### 第 2 步：在 agent loop 中注入
+
+修改 `src/agent/loop.ts`：
+
+```ts
+import { loadProjectMemory, buildSystemPromptWithMemory } from "./memory.ts";
+
+// 首轮构建 system 消息时：
+const memory = await loadProjectMemory(workspace);
+const fullSystemPrompt = buildSystemPromptWithMemory(SYSTEM_PROMPT, memory);
+// 用 fullSystemPrompt 替代 SYSTEM_PROMPT
+```
+
+#### 第 3 步：压缩后重注入
+
+修改 `src/agent/context.ts` 的 `truncate()` 函数：
+
+```ts
+import { loadProjectMemory, buildSystemPromptWithMemory } from "./memory.ts";
+import { SYSTEM_PROMPT } from "./system-prompt.ts";
+
+// 压缩后重新加载 AGENTS.md，确保 system 消息包含项目约定
+const memory = await loadProjectMemory(workspace);
+const systemContent = buildSystemPromptWithMemory(SYSTEM_PROMPT, memory);
+// 压缩后的消息列表以 system 消息开头
+```
+
+#### 第 4 步：创建 AGENTS.md
+
+在项目根目录创建 `AGENTS.md`：
+
+```markdown
+# MiniHarness 项目约定
+
+## 代码风格
+- TypeScript 严格模式，禁用 any
+- 单文件实现，不建子目录（除非超过 200 行）
+- 不加注释，除非逻辑非显而易见
+
+## 架构规则
+- 工具必须实现 Tool 接口，通过 register() 注册
+- Provider 必须实现 Provider 接口，通过工厂创建
+- 所有安全检查走 safety/policy.ts
+
+## 禁止事项
+- 不引入新 npm 依赖
+- 不修改 .anvil/ 目录下的会话文件
+```
+
+### 验收标准
+
+- [ ] 有 AGENTS.md 时，系统提示词包含其内容
+- [ ] 没有 AGENTS.md 时，系统提示词和之前一致
+- [ ] AGENTS.md 超过 100 行被截断并标注
+- [ ] 上下文压缩后，AGENTS.md 被重新注入
+
+---
+
+## 9.3 增强工具集（MCP 复用）
+
+**目标**：补齐搜索、精确编辑、shell 执行，全部通过 MCP 配置实现，零手写代码。
+
+**参考**：OpenCode 内置 grep/glob/bash/edit 工具 [$TRAE_REF](https://opencode.ai/docs/tools)，但 MiniHarness 已有 MCP 协议，直接复用更轻量。
+
+### 设计思路
 
 | 能力 | MCP 服务器 | 工具名 | 状态 |
 |------|-----------|--------|------|
 | 搜索代码 | @modelcontextprotocol/server-filesystem | `mcp__fs__search_files` | 已配置 |
 | 精确编辑 | @modelcontextprotocol/server-filesystem | `mcp__fs__edit_file` | 已配置 |
-| 执行命令 | mcp-shell-server (tumf) | `mcp__shell__shell_execute` | 新增配置 |
-
-### 为什么选 mcp-shell-server
-
-社区有几个 shell MCP 服务器，`tumf/mcp-shell-server` 是最成熟的：
-
-- 296 次提交，MIT 许可，活跃维护 [$TRAE_REF](https://github.com/tumf/mcp-shell-server)
-- **命令白名单**：通过 `ALLOW_COMMANDS` 环境变量配置，不在白名单里的命令直接拒绝
-- **argv 执行**：命令以数组形式传递，不经过 shell 字符串解释（防注入）
-- **环境隔离**：子进程不继承父进程的密钥和 Token
-- **审计日志**：每次调用记录命令、耗时、退出码，敏感信息自动脱敏
-- **执行限制**：可配置超时（默认 30s，上限 300s）和输出大小上限（默认 1MB）
-- **参数硬化**：即使命令在白名单里，也会拦截 `find -exec`、`xargs`、`git -c` 等执行向量
+| 执行命令 | local-terminal-mcp | `mcp__shell__shell_run` | 新增 |
 
 ### 具体步骤
 
-#### 第 1 步：安装 uv（Python 包管理器）
+#### 第 1 步：配置 .env
 
-mcp-shell-server 是 Python 包，用 `uvx` 运行（类似 Node.js 的 `npx`）：
+修改 `.env`，在 `MINIHARNESS_MCP_SERVERS` 中追加 shell 服务器：
 
-```bash
-# Windows
-pip install uv
-
-# 或用官方安装器
-powershell -c "irm https://astral.sh/uv/install.ps1 | iex"
-
-# 验证
-uvx --version
+```env
+MINIHARNESS_MCP_SERVERS="fs:npx -y @modelcontextprotocol/server-filesystem .;
+mem:npx -y @modelcontextprotocol/server-memory|MEMORY_FILE_PATH=${workspace}/.anvil/mcp-memory.jsonl;
+shell:npx -y local-terminal-mcp|ALLOW_COMMANDS=^ls,^cat,^pwd,^grep,^wc,^find,^node,^npx,^pnpm,^tsc,^git,^mkdir,^cp,^mv"
 ```
 
-#### 第 2 步：配置 .env
+#### 第 2 步：配置安全策略
 
-在 `MINIHARNESS_MCP_SERVERS` 里加上 shell 服务器：
-
-```bash
-# .env
-MINIHARNESS_MCP_SERVERS=fs:npx -y @modelcontextprotocol/server-filesystem .;shell:uvx mcp-shell-server|ALLOW_COMMANDS=ls,cat,pwd,grep,wc,find,node,npx,pnpm,tsc,git,mkdir,cp,mv
-```
-
-**配置解析**：
-- `shell` — MCP 服务器名称（工具名前缀）
-- `uvx mcp-shell-server` — 启动命令（uvx 会自动下载并运行）
-- `ALLOW_COMMANDS=ls,cat,...` — 逗号分隔的命令白名单，不在列表里的命令会被拒绝
-
-> **白名单建议**：根据你的项目需要调整。上面列的是编码场景常用命令（文件操作 + Node.js 工具链 + git）。**不要**加 `rm`、`curl`、`wget` 等危险命令。
-
-启动后控制台应该能看到：
-
-```
-[MCP] fs: 6 个工具就绪
-[MCP:fs] 注册工具: mcp__fs__search_files
-[MCP:fs] 注册工具: mcp__fs__edit_file
-...
-[MCP] shell: 1 个工具就绪
-[MCP:shell] 注册工具: mcp__shell__shell_execute
-```
-
-#### 第 3 步：配置安全策略
-
-MCP 工具注册到 registry 后，安全策略默认是 `ask`（因为不在 `DEFAULT_POLICY` 里）。只读操作应该设为 `allow`。
-
-在 `src/safety/policy.ts` 的 `DEFAULT_POLICY` 里加上所有 MCP 工具的规则：
+修改 `src/safety/policy.ts` 的 `DEFAULT_POLICY`：
 
 ```ts
 const DEFAULT_POLICY: Record<string, Permission> = {
@@ -147,23 +353,51 @@ const DEFAULT_POLICY: Record<string, Permission> = {
     "write-file": "ask",
     "edit-file": "ask",
     "run-shell": "ask",
-    // MCP filesystem 工具（已有）
-    "mcp__fs__search_files": "allow",       // 只读搜索，放行
-    "mcp__fs__list_directory": "allow",     // 只读列表，放行
-    "mcp__fs__read_file": "allow",           // 只读读取，放行
-    "mcp__fs__write_file": "ask",           // 写入，需确认
-    "mcp__fs__edit_file": "ask",            // 编辑，需确认
-    "mcp__fs__create_directory": "ask",     // 创建目录，需确认
-    // MCP shell 工具（新增）
-    "mcp__shell__shell_execute": "ask",     // shell 执行，需确认
+    // MCP filesystem
+    "mcp__fs__search_files": "allow",
+    "mcp__fs__list_directory": "allow",
+    "mcp__fs__read_file": "allow",
+    "mcp__fs__get_file_info": "allow",
+    "mcp__fs__write_file": "ask",
+    "mcp__fs__edit_file": "ask",
+    "mcp__fs__create_directory": "ask",
+    "mcp__fs__move_file": "ask",
+    // MCP memory
+    "mcp__mem__read_entities": "allow",
+    "mcp__mem__read_graph": "allow",
+    "mcp__mem__search_nodes": "allow",
+    "mcp__mem__open_nodes": "allow",
+    "mcp__mem__create_entities": "ask",
+    "mcp__mem__create_relations": "ask",
+    "mcp__mem__add_observations": "ask",
+    "mcp__mem__delete_entities": "ask",
+    "mcp__mem__delete_relations": "ask",
+    "mcp__mem__delete_observations": "ask",
+    // MCP shell
+    "mcp__shell__shell_run": "ask",
+    "mcp__shell__check_command": "allow",
+    "mcp__shell__list_rules": "allow",
+    "mcp__shell__reload_config": "ask",
 };
 ```
 
-> **双层安全**：mcp-shell-server 自身有命令白名单（第一层），MiniHarness 的安全策略再加一层审批（第二层）。即使白名单允许 `git`，用户仍可在执行前拒绝。
+#### 第 3 步：为 shell_run 添加危险命令拦截
+
+在 `src/safety/policy.ts` 的 `checkPolicy()` 中追加：
+
+```ts
+if(toolName === "mcp__shell__shell_run" && typeof args.command === "string") {
+    const danger = isDangerousCommand(args.command);
+    if(danger) {
+        logger?.({ kind: "deny", tool: toolName, reason: `命中危险模式：${danger}` });
+        return "deny";
+    }
+}
+```
 
 #### 第 4 步：更新系统提示词
 
-修改 `src/agent/system-prompt.ts`，把所有 MCP 工具告诉 Agent：
+修改 `src/agent/system-prompt.ts`：
 
 ```ts
 export const SYSTEM_PROMPT = `你是一个编码 Agent，工作在一个受限工作区内。
@@ -171,1186 +405,651 @@ export const SYSTEM_PROMPT = `你是一个编码 Agent，工作在一个受限�
 可用工具：
 - read-file / list-dir：内置文件读取和目录列表
 - write-file：创建或覆盖文件
-- mcp__fs__search_files：搜索文件内容（正则表达式），返回文件路径和匹配行
+- mcp__fs__search_files：正则搜索文件内容，返回文件路径和匹配行
 - mcp__fs__edit_file：精确编辑文件（替换指定文本，不覆盖整个文件）
 - mcp__fs__read_file / mcp__fs__list_directory：MCP 版本的文件读取和目录列表
-- mcp__shell__shell_execute：执行 shell 命令（命令数组形式，如 ["pnpm","test"]，有安全限制）
+- mcp__shell__shell_run：执行 shell 命令（有安全限制，危险命令会被拦截）
+- mcp__mem__*：跨会话记忆工具
 
 工作规则：
 1. 改文件前必须先 read-file 或 mcp__fs__read_file 确认当前内容
 2. 小范围修改优先用 mcp__fs__edit_file，大范围重写才用 write-file
 3. 找代码定义用 mcp__fs__search_files，不要一个个文件翻
-4. 改完代码可以用 mcp__shell__shell_execute 跑测试或格式化
-5. shell 命令用数组形式传参，如 ["node","-v"]，不要拼成字符串
-6. 工具失败时分析原因再重试，不要盲目重复
-7. 任务完成后用一句话总结结果
+4. 改完代码可以用 mcp__shell__shell_run 跑测试或格式化
+5. 工具失败时分析原因再重试，不要盲目重复
+6. 任务完成后用一句话总结结果
 
 工具结果会被裁剪以节省上下文，省略部分用 [...省略 N 行...] 标记。`;
 ```
 
-> **注意**：mcp-shell-server 的 `command` 参数是**数组**而非字符串，如 `["pnpm", "test"]`。提示词第 5 条规则提醒 Agent 用数组形式传参。
-
 ### 验收标准
 
-- [ ] 安装 uv，`uvx --version` 正常输出
-- [ ] 启动时控制台显示 `[MCP] shell: 1 个工具就绪`
-- [ ] `mcp__fs__search_files` 能搜索整个 src 目录，返回文件名+行号+匹配内容
-- [ ] `mcp__fs__edit_file` 能精确替换文件中的一段文本，不碰其他行
-- [ ] `mcp__shell__shell_execute` 能执行 `["pnpm","test"]` 并返回输出
-- [ ] 不在白名单的命令（如 `rm`）被 mcp-shell-server 拒绝
-- [ ] MCP 工具的安全策略生效（搜索 allow，shell execute ask）
-- [ ] 系统提示词已更新，Agent 知道并能调用这些工具
-- [ ] 在 eval 评测集里加上使用 search_files 和 shell_execute 的任务，通过率不降
+- [ ] 启动时控制台显示 `[MCP] shell: N 个工具就绪`
+- [ ] `mcp__fs__search_files` 能搜索整个 src 目录
+- [ ] `mcp__fs__edit_file` 能精确替换文件文本
+- [ ] `mcp__shell__shell_run` 能执行 `pnpm test`
+- [ ] 不在白名单的命令（如 `rm`）被拒绝
+- [ ] 安全策略生效（搜索 allow，shell ask）
 
 ---
 
-## Phase 9.2 RAG 语义检索
+## 9.4 Git 集成工具
 
-**目标**：把代码库向量化，让 Agent 能用自然语言搜索代码（「找处理用户登录的函数」），而不仅是正则匹配。
+**目标**：Agent 能查看 git 状态、生成 commit message、自动提交。
 
-**你将学到**：向量嵌入（Embedding）、向量数据库、语义检索、索引管理。
-
-### 为什么要做
-
-grep 只能做正则匹配——你搜 `login` 能找到包含这个词的代码，但搜「处理用户认证的逻辑」就搜不到了。
-
-RAG 的思路是：把每段代码转成向量（一组数字），搜索时也把查询转成向量，然后算向量距离找最相关的代码段。
-
-### 设计思路
-
-```
-┌─────────────┐     embedding     ┌──────────────┐
-│  代码文件    │ ───────────────► │  向量索引     │
-│  (按 chunk)  │                  │  (内存/文件)  │
-└─────────────┘                  └──────┬───────┘
-                                        │
-                 查询 "登录逻辑"         │ 语义搜索
-                 ──────────────────────►│
-                                        │
-                                        ▼
-                                 ┌──────────────┐
-                                 │  Top-K 结果   │
-                                 │  (代码段+路径) │
-                                 └──────────────┘
-```
+**参考**：Claude Code 的 git workflow，OpenCode 的 `/undo`/`/redo`。
 
 ### 具体步骤
 
-#### 第 1 步：安装依赖
+#### 第 1 步：Git 工具集
 
-```bash
-pnpm add openai    # 用 OpenAI embedding API（或用兼容的本地模型）
-```
-
-#### 第 2 步：定义 RAG 类型
-
-新建 `src/rag/types.ts`：
+新建 `src/tools/git-tools.ts`：
 
 ```ts
-// src/rag/types.ts
-export interface CodeChunk {
-  id: string;
-  filePath: string;
-  startLine: number;
-  endLine: number;
-  content: string;
-  embedding: number[];
-}
-
-export interface SearchResult {
-  filePath: string;
-  startLine: number;
-  endLine: number;
-  content: string;
-  score: number;  // 相似度分数 0-1
-}
-
-export interface RagIndex {
-  chunks: CodeChunk[];
-  indexedAt: number;
-  fileCount: number;
-}
-```
-
-#### 第 3 步：写代码分块器
-
-代码不能整文件塞给 embedding API（太长 + 太贵），需要按函数/类分块：
-
-```ts
-// src/rag/chunker.ts
-import { readFile, readdir } from "node:fs/promises";
-import { join, relative } from "node:path";
-
-const IGNORE_DIRS = new Set(["node_modules", ".git", ".anvil", "dist", "build"]);
-const MAX_CHUNK_LINES = 80;
-const MIN_CHUNK_LINES = 5;
-const SUPPORTED_EXT = new Set([".ts", ".js", ".tsx", ".jsx", ".py", ".go", ".rs", ".java"]);
-
-export async function chunkCodebase(workspace: string): Promise<Omit<CodeChunk, "embedding" | "id">[]> {
-  const chunks: Omit<CodeChunk, "embedding" | "id">[] = [];
-
-  async function scanDir(dir: string) {
-    const entries = await readdir(dir, { withFileTypes: true });
-    for (const entry of entries) {
-      if (IGNORE_DIRS.has(entry.name)) continue;
-      const fullPath = join(dir, entry.name);
-      if (entry.isDirectory()) {
-        await scanDir(fullPath);
-      } else if (SUPPORTED_EXT.has(getExt(entry.name))) {
-        const fileChunks = await chunkFile(fullPath, workspace);
-        chunks.push(...fileChunks);
-      }
-    }
-  }
-
-  await scanDir(workspace);
-  return chunks;
-}
-
-async function chunkFile(filePath: string, workspace: string): Promise<Omit<CodeChunk, "embedding" | "id">[]> {
-  const content = await readFile(filePath, "utf-8");
-  const lines = content.split("\n");
-  const relPath = relative(workspace, filePath);
-  const chunks: Omit<CodeChunk, "embedding" | "id">[] = [];
-
-  let currentBlock: string[] = [];
-  let startLine = 1;
-
-  for (let i = 0; i < lines.length; i++) {
-    currentBlock.push(lines[i]!);
-
-    const isBreak = lines[i]!.trim() === "" || currentBlock.length >= MAX_CHUNK_LINES;
-    if (isBreak && currentBlock.length >= MIN_CHUNK_LINES) {
-      chunks.push({
-        filePath: relPath,
-        startLine,
-        endLine: i + 1,
-        content: currentBlock.join("\n"),
-      });
-      startLine = i + 2;
-      currentBlock = [];
-    }
-  }
-
-  if (currentBlock.length >= MIN_CHUNK_LINES) {
-    chunks.push({
-      filePath: relPath,
-      startLine,
-      endLine: lines.length,
-      content: currentBlock.join("\n"),
-    });
-  }
-
-  return chunks;
-}
-
-function getExt(name: string): string {
-  const idx = name.lastIndexOf(".");
-  return idx >= 0 ? name.slice(idx) : "";
-}
-```
-
-#### 第 4 步：写 Embedding 服务
-
-```ts
-// src/rag/embedding.ts
-import type { ProviderConfig } from "../provider/openai.ts";
-
-const EMBEDDING_MODEL = "text-embedding-3-small";
-const BATCH_SIZE = 100;
-
-export class EmbeddingService {
-  private apiKey: string;
-  private baseUrl: string;
-
-  constructor(config: { apiKey: string; baseUrl?: string }) {
-    this.apiKey = config.apiKey;
-    this.baseUrl = config.baseUrl ?? "https://api.openai.com/v1";
-  }
-
-  async embed(texts: string[]): Promise<number[][]> {
-    const allEmbeddings: number[][] = [];
-
-    for (let i = 0; i < texts.length; i += BATCH_SIZE) {
-      const batch = texts.slice(i, i + BATCH_SIZE);
-      const res = await fetch(`${this.baseUrl}/embeddings`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${this.apiKey}`,
-        },
-        body: JSON.stringify({
-          model: EMBEDDING_MODEL,
-          input: batch,
-        }),
-      });
-
-      if (!res.ok) {
-        throw new Error(`Embedding API error: ${res.status} ${await res.text()}`);
-      }
-
-      const data = await res.json();
-      allEmbeddings.push(...data.data.map((d: { embedding: number[] }) => d.embedding));
-    }
-
-    return allEmbeddings;
-  }
-
-  async embedQuery(text: string): Promise<number[]> {
-    const [embedding] = await this.embed([text]);
-    return embedding!;
-  }
-}
-```
-
-#### 第 5 步：写向量索引和搜索
-
-用内存里的简单余弦相似度，不引入外部向量数据库：
-
-```ts
-// src/rag/index.ts
-import { writeFile, readFile, mkdir } from "node:fs/promises";
-import type { CodeChunk, RagIndex, SearchResult } from "./types.ts";
-
-const INDEX_PATH = ".anvil/rag-index.json";
-
-export class RagIndexStore {
-  private chunks: CodeChunk[] = [];
-  private indexedAt = 0;
-  private fileCount = 0;
-
-  async load(): Promise<boolean> {
-    try {
-      const data = await readFile(INDEX_PATH, "utf-8");
-      const idx = JSON.parse(data) as RagIndex;
-      this.chunks = idx.chunks;
-      this.indexedAt = idx.indexedAt;
-      this.fileCount = idx.fileCount;
-      return true;
-    } catch {
-      return false;
-    }
-  }
-
-  async save(): Promise<void> {
-    await mkdir(".anvil", { recursive: true });
-    const index: RagIndex = {
-      chunks: this.chunks,
-      indexedAt: this.indexedAt,
-      fileCount: this.fileCount,
-    };
-    await writeFile(INDEX_PATH, JSON.stringify(index), "utf-8");
-  }
-
-  setChunks(chunks: CodeChunk[]): void {
-    this.chunks = chunks;
-    this.indexedAt = Date.now();
-    this.fileCount = new Set(chunks.map(c => c.filePath)).size;
-  }
-
-  search(queryEmbedding: number[], topK = 5): SearchResult[] {
-    const scored = this.chunks.map(chunk => ({
-      filePath: chunk.filePath,
-      startLine: chunk.startLine,
-      endLine: chunk.endLine,
-      content: chunk.content,
-      score: cosineSimilarity(queryEmbedding, chunk.embedding),
-    }));
-
-    return scored
-      .sort((a, b) => b.score - a.score)
-      .slice(0, topK);
-  }
-
-  getStats() {
-    return { chunks: this.chunks.length, files: this.fileCount, indexedAt: this.indexedAt };
-  }
-}
-
-function cosineSimilarity(a: number[], b: number[]): number {
-  let dot = 0;
-  let normA = 0;
-  let normB = 0;
-  for (let i = 0; i < a.length; i++) {
-    dot += a[i]! * b[i]!;
-    normA += a[i]! * a[i]!;
-    normB += b[i]! * b[i]!;
-  }
-  const denom = Math.sqrt(normA) * Math.sqrt(normB);
-  return denom === 0 ? 0 : dot / denom;
-}
-```
-
-#### 第 6 步：写 rag-search 工具
-
-```ts
-// src/rag/search-tool.ts
-import { z } from "zod";
-import type { Tool, ToolContext } from "../tools/types.ts";
-import { register } from "../tools/registry.ts";
-import { RagIndexStore } from "./index.ts";
-import { EmbeddingService } from "./embedding.ts";
-import { chunkCodebase } from "./chunker.ts";
-import { apiKey, baseUrl } from "../config.ts";
-
-const ragStore = new RagIndexStore();
-let embeddingService: EmbeddingService | null = null;
-
-function getEmbeddingService(): EmbeddingService {
-  if (!embeddingService) {
-    embeddingService = new EmbeddingService({ apiKey, baseUrl });
-  }
-  return embeddingService;
-}
-
-const ragSearchTool: Tool = {
-  name: "rag-search",
-  description: "语义搜索代码库。用自然语言描述你想找的代码，返回最相关的代码段。",
-  inputSchema: {
-    type: "object",
-    properties: {
-      query: { type: "string", description: "自然语言查询，如'处理用户登录的函数'" },
-      topK: { type: "number", description: "返回结果数，默认 5" },
-    },
-    required: ["query"],
-  },
-
-  async execute(args: Record<string, unknown>, _ctx: ToolContext) {
-    const { query, topK = 5 } = z.object({
-      query: z.string(),
-      topK: z.number().default(5),
-    }).parse(args);
-
-    if (ragStore.getStats().chunks === 0) {
-      return { ok: false, error: "索引为空，请先运行 rag-index 建立索引" };
-    }
-
-    try {
-      const svc = getEmbeddingService();
-      const queryEmbedding = await svc.embedQuery(query);
-      const results = ragStore.search(queryEmbedding, topK);
-
-      const output = results.map((r, i) =>
-        `[${i + 1}] ${r.filePath}:${r.startLine}-${r.endLine} (score: ${r.score.toFixed(3)})\n${r.content}`
-      ).join("\n\n");
-
-      return { ok: true, output: output || "未找到相关代码" };
-    } catch (e) {
-      return { ok: false, error: String(e) };
-    }
-  },
-};
-
-const ragIndexTool: Tool = {
-  name: "rag-index",
-  description: "为代码库建立语义索引。建好后可用 rag-search 搜索。",
-  inputSchema: { type: "object", properties: {}, required: [] },
-
-  async execute(_args: Record<string, unknown>, ctx: ToolContext) {
-    try {
-      const rawChunks = await chunkCodebase(ctx.workspace);
-      const svc = getEmbeddingService();
-      const embeddings = await svc.embed(rawChunks.map(c => c.content));
-      const chunks: CodeChunk[] = rawChunks.map((c, i) => ({
-        id: `${c.filePath}:${c.startLine}`,
-        ...c,
-        embedding: embeddings[i]!,
-      }));
-      ragStore.setChunks(chunks);
-      await ragStore.save();
-      return { ok: true, output: `索引完成: ${chunks.length} 个 chunk, ${ragStore.getStats().files} 个文件` };
-    } catch (e) {
-      return { ok: false, error: String(e) };
-    }
-  },
-};
-
-export function registerRagTools() {
-  ragStore.load().catch(() => {});
-  register(ragSearchTool);
-  register(ragIndexTool);
-}
-```
-
-在 `safety/policy.ts` 里把这两个工具设为 `allow`：
-
-```ts
-const DEFAULT_POLICY: Record<string, Permission> = {
-  // ... 已有的
-  "rag-search": "allow",
-  "rag-index": "allow",
-};
-```
-
-在 `src/index.ts` 注册：
-
-```ts
-import { registerRagTools } from "./rag/search-tool.ts";
-registerRagTools();
-```
-
-### 验收标准
-
-- [ ] 运行 `rag-index` 能扫描整个 src 目录并生成索引文件 `.anvil/rag-index.json`
-- [ ] 运行 `rag-search "处理工具注册的函数"` 能返回 `registry.ts` 的相关代码段
-- [ ] 索引文件持久化，重启 Agent 不需要重新建索引
-- [ ] 索引超过 100 个 chunk 时搜索延迟 < 500ms
-- [ ] 在 eval 里加一个语义搜索任务，通过
-
----
-
-## Phase 9.3 自动测试与修复循环
-
-**目标**：Agent 改完代码后能自动跑测试，分析失败原因，自动修复，循环直到通过或达到重试上限。
-
-**你将学到**：测试驱动开发（TDD）的 Agent 化、错误分析、重试策略、收敛检测。
-
-### 为什么要做
-
-现在 Agent 改完代码就结束了，不知道改对没有。如果 Agent 能：
-
-1. 改完代码 → 自动跑测试
-2. 测试失败 → 分析错误信息
-3. 针对性修复 → 再跑测试
-4. 循环直到通过或达到上限
-
-这就是一个真正的「AI 编程助手」该有的能力。
-
-### 设计思路
-
-```
-Agent 正常执行任务
-         │
-         ▼
-    代码改完
-         │
-         ▼
-   自动跑测试 ──────► 通过 ──► 完成
-         │
-         失败
-         │
-         ▼
-   分析错误信息
-         │
-         ▼
-   生成修复方案 ──── 修复代码
-         │              │
-         │◄─────────────┘
-         ▼
-   再跑测试 ──────► 通过 ──► 完成
-         │
-         失败 + 未达上限
-         │
-         ▼
-   继续循环...
-```
-
-### 具体步骤
-
-#### 第 1 步：定义修复循环类型
-
-新建 `src/agent/auto-fix/types.ts`：
-
-```ts
-// src/agent/auto-fix/types.ts
-export interface FixLoopOptions {
-  testCommand: string;
-  maxFixAttempts: number;
-  workspace: string;
-  onAttempt?: (attempt: number, result: FixAttemptResult) => void;
-}
-
-export interface FixAttemptResult {
-  attempt: number;
-  testPassed: boolean;
-  testOutput: string;
-  fixDescription?: string;
-  fixedFiles?: string[];
-  error?: string;
-}
-
-export interface FixLoopResult {
-  success: boolean;
-  totalAttempts: number;
-  attempts: FixAttemptResult[];
-  finalTestOutput: string;
-}
-```
-
-#### 第 2 步：写测试运行器
-
-```ts
-// src/agent/auto-fix/test-runner.ts
-import { exec } from "node:child_process";
-import { promisify } from "node:util";
-
-const execP = promisify(exec);
-const TEST_TIMEOUT = 60_000;
-
-export interface TestResult {
-  passed: boolean;
-  output: string;
-  error?: string;
-}
-
-export async function runTest(command: string, workspace: string): Promise<TestResult> {
-  try {
-    const { stdout, stderr } = await execP(command, {
-      cwd: workspace,
-      timeout: TEST_TIMEOUT,
-      maxBuffer: 2 * 1024 * 1024,
-    });
-
-    const output = (stdout + stderr).trim();
-    return { passed: true, output: output || "(无输出)" };
-  } catch (e: unknown) {
-    const err = e as { stdout?: string; stderr?: string; message: string };
-    const output = ((err.stdout ?? "") + (err.stderr ?? "")).trim();
-    return {
-      passed: false,
-      output: output || err.message,
-      error: err.message,
-    };
-  }
-}
-```
-
-#### 第 3 步：写修复循环
-
-```ts
-// src/agent/auto-fix/loop.ts
-import type { Provider } from "../../provider/index.ts";
-import type { ToolContext } from "../../tools/index.ts";
-import { runAgent } from "../loop.ts";
-import { runTest } from "./test-runner.ts";
-import type { FixLoopOptions, FixAttemptResult, FixLoopResult } from "./types.ts";
-
-const FIX_PROMPT_PREFIX = `测试失败了，请分析错误信息并修复代码。
-
-测试输出：
-`;
-
-const FIX_PROMPT_SUFFIX = `
-
-要求：
-1. 仔细分析错误信息，找到根本原因
-2. 用 edit-file 精确修复，不要重写整个文件
-3. 修复后不需要再跑测试，循环会自动处理`;
-
-export async function runFixLoop(
-  initialTask: string,
-  provider: Provider,
-  ctx: ToolContext,
-  opts: FixLoopOptions,
-): Promise<FixLoopResult> {
-  const { testCommand, maxFixAttempts = 3, onAttempt } = opts;
-  const attempts: FixAttemptResult[] = [];
-
-  // 第 1 轮：执行原始任务
-  await runAgent(initialTask, provider, ctx, undefined, {
-    safetyOptions: { autoApprove: true },
-    maxRounds: 10,
-  });
-
-  let testResult = await runTest(testCommand, ctx.workspace);
-  const firstAttempt: FixAttemptResult = {
-    attempt: 1,
-    testPassed: testResult.passed,
-    testOutput: testResult.output,
-  };
-  attempts.push(firstAttempt);
-  onAttempt?.(1, firstAttempt);
-
-  if (testResult.passed) {
-    return { success: true, totalAttempts: 1, attempts, finalTestOutput: testResult.output };
-  }
-
-  // 第 2~N 轮：修复循环
-  for (let i = 2; i <= maxFixAttempts + 1; i++) {
-    const fixTask = FIX_PROMPT_PREFIX + testResult.output.slice(0, 4000) + FIX_PROMPT_SUFFIX;
-
-    await runAgent(fixTask, provider, ctx, undefined, {
-      safetyOptions: { autoApprove: true },
-      maxRounds: 10,
-    });
-
-    testResult = await runTest(testCommand, ctx.workspace);
-    const attempt: FixAttemptResult = {
-      attempt: i,
-      testPassed: testResult.passed,
-      testOutput: testResult.output,
-    };
-    attempts.push(attempt);
-    onAttempt?.(i, attempt);
-
-    if (testResult.passed) {
-      return { success: true, totalAttempts: i, attempts, finalTestOutput: testResult.output };
-    }
-  }
-
-  return {
-    success: false,
-    totalAttempts: attempts.length,
-    attempts,
-    finalTestOutput: testResult.output,
-  };
-}
-```
-
-#### 第 4 步：暴露为 CLI 命令
-
-在 `src/index.ts` 加一个 `fix` 命令：
-
-```ts
-// src/index.ts（追加）
-import { runFixLoop } from "./agent/auto-fix/loop.ts";
-
-async function fix() {
-  const testCmd = rest[0] || "pnpm test";
-  const task = rest.slice(1).join(" ").trim();
-  if (!task) {
-    console.error("用法: pnpm dev fix <test-command> <task>");
-    process.exit(1);
-  }
-
-  console.error(`[auto-fix] 测试命令: ${testCmd}`);
-  console.error(`[auto-fix] 任务: ${task}`);
-
-  const result = await runFixLoop(task, provider, ctx, {
-    testCommand: testCmd,
-    maxFixAttempts: 3,
-    workspace: ctx.workspace,
-    onAttempt: (attempt, r) => {
-      const icon = r.testPassed ? "✓" : "✗";
-      console.error(`  ${icon} 第 ${attempt} 次: ${r.testPassed ? "测试通过" : "测试失败"}`);
-    },
-  });
-
-  if (result.success) {
-    console.error(`\n✅ 修复成功！共 ${result.totalAttempts} 次尝试。`);
-  } else {
-    console.error(`\n❌ 修复失败。尝试了 ${result.totalAttempts} 次。`);
-    console.error(`最后一次测试输出:\n${result.finalTestOutput.slice(0, 2000)}`);
-  }
-}
-
-const commands: Record<string, () => Promise<void>> = {
-  // ... 已有的
-  fix,
-};
-```
-
-### 验收标准
-
-- [ ] `pnpm dev fix "pnpm test" "修复 tool-system.test.ts 里的失败"` 能自动跑循环
-- [ ] 循环最多重试 3 次，不会无限循环
-- [ ] 每次修复尝试后自动跑测试，结果记录在 attempts 里
-- [ ] 测试通过后立即停止，不再继续修复
-- [ ] 所有尝试失败后输出最后一次测试结果
-
----
-
-## Phase 9.4 插件系统
-
-**目标**：让用户能写一个 npm 包作为插件，不用改 MiniHarness 源码就能加新工具、新 Provider。
-
-**你将学到**：插件架构设计、动态加载、生命周期管理、接口契约。
-
-### 为什么要做
-
-现在加工具要改 `src/tools/` 下的文件然后重启。插件系统让你可以：
-
-```bash
-pnpm add miniharness-plugin-git   # 装 Git 插件
-# 下次启动自动加载，Agent 就有了 git 工具
-```
-
-### 设计思路
-
-```
-┌─────────────────────────────────────────┐
-│            MiniHarness 核心              │
-│                                         │
-│  ┌─────────┐  ┌──────────┐  ┌────────┐ │
-│  │ Tool    │  │ Provider │  │ Safety │ │
-│  │ Registry│  │ Factory  │  │ Policy │ │
-│  └────┬────┘  └────┬─────┘  └────┬───┘ │
-│       │            │             │      │
-│       ▼            ▼             ▼      │
-│  ┌────────────────────────────────────┐ │
-│  │         Plugin Interface           │ │
-│  │  - registerTools(registry)         │ │
-│  │  - registerProvider(factory)       │ │
-│  │  - onInit(ctx) / onDestroy()       │ │
-│  └────────────────────────────────────┘ │
-│       ▲                                 │
-│       │ auto-discover                   │
-└───────┼─────────────────────────────────┘
-        │
-   ┌────┴────┐
-   ▼         ▼
- 插件 A     插件 B    (node_modules 里的 npm 包)
-```
-
-### 具体步骤
-
-#### 第 1 步：定义插件接口
-
-新建 `src/plugin/types.ts`：
-
-```ts
-// src/plugin/types.ts
-import type { Tool } from "../tools/types.ts";
-import type { Provider } from "../provider/types.ts";
-import type { Permission } from "../safety/types.ts";
-
-export interface PluginContext {
-  workspace: string;
-  config: Record<string, unknown>;
-}
-
-export interface MiniHarnessPlugin {
-  name: string;
-  version: string;
-
-  registerTools?(ctx: PluginContext): Tool[];
-  registerProvider?(ctx: PluginContext): Provider | null;
-  registerSafetyRules?(): Record<string, Permission>;
-
-  onInit?(ctx: PluginContext): void | Promise<void>;
-  onDestroy?(): void | Promise<void>;
-}
-
-export interface PluginModule {
-  default: (ctx: PluginContext) => MiniHarnessPlugin;
-}
-```
-
-#### 第 2 步：写安全策略桥接
-
-```ts
-// src/plugin/safety-bridge.ts
-import type { Permission } from "../safety/types.ts";
-
-const customRules = new Map<string, Permission>();
-
-export function registerSafetyRules(rules: Record<string, Permission>): void {
-  for (const [toolName, perm] of Object.entries(rules)) {
-    customRules.set(toolName, perm);
-  }
-}
-
-export function getCustomPermission(toolName: string): Permission | undefined {
-  return customRules.get(toolName);
-}
-```
-
-在 `safety/policy.ts` 的 `checkPolicy` 里加入自定义规则查询：
-
-```ts
-// safety/policy.ts（修改 checkPolicy）
-import { getCustomPermission } from "../plugin/safety-bridge.ts";
-
-export function checkPolicy(inv: ToolInvocation, opts: SafetyOptions = {}): Permission {
-    const { toolName, args, workspace } = inv;
-    const logger = opts.logger;
-
-    // 先查插件注册的自定义规则
-    const customPerm = getCustomPermission(toolName);
-    if (customPerm) {
-        logger?.({ kind: customPerm, tool: toolName, reason: `插件规则: ${customPerm}` });
-        return customPerm;
-    }
-
-    const defaultPerm = DEFAULT_POLICY[toolName] ?? "ask";
-    // ... 后续逻辑不变
-}
-```
-
-#### 第 3 步：写插件加载器
-
-```ts
-// src/plugin/loader.ts
-import { readFile } from "node:fs/promises";
-import { join } from "node:path";
-import type { MiniHarnessPlugin, PluginContext, PluginModule } from "./types.ts";
-import { register } from "../tools/registry.ts";
-import { registerSafetyRules } from "./safety-bridge.ts";
-
-const PLUGIN_PREFIX = "miniharness-plugin-";
-
-export async function loadPlugins(baseCtx: PluginContext): Promise<MiniHarnessPlugin[]> {
-  const loaded: MiniHarnessPlugin[] = [];
-
-  // 自动发现 package.json 中的插件依赖
-  let names: string[] = [];
-  try {
-    const pkg = JSON.parse(await readFile(join(process.cwd(), "package.json"), "utf-8"));
-    names = Object.keys({ ...pkg.dependencies, ...pkg.devDependencies })
-      .filter(n => n.startsWith(PLUGIN_PREFIX));
-  } catch { /* 无 package.json 则跳过 */ }
-
-  for (const pkgName of names) {
-    try {
-      const mod = await import(pkgName) as PluginModule;
-      const plugin = mod.default(baseCtx);
-      await plugin.onInit?.(baseCtx);
-
-      if (plugin.registerTools) {
-        for (const tool of plugin.registerTools(baseCtx)) {
-          register(tool);
-          console.error(`[plugin:${plugin.name}] 注册工具: ${tool.name}`);
-        }
-      }
-      if (plugin.registerSafetyRules) {
-        registerSafetyRules(plugin.registerSafetyRules());
-      }
-
-      loaded.push(plugin);
-      console.error(`[plugin:${plugin.name}] v${plugin.version} 已加载`);
-    } catch (e) {
-      console.error(`[plugin:${pkgName}] 加载失败: ${e}`);
-    }
-  }
-
-  return loaded;
-}
-```
-
-#### 第 4 步：在入口启动插件
-
-```ts
-// src/index.ts（追加）
-import { loadPlugins } from "./plugin/loader.ts";
-
-const plugins = await loadPlugins({ workspace, config: {} });
-process.on("exit", () => {
-  for (const p of plugins) p.onDestroy?.();
-});
-```
-
-#### 第 5 步：写一个示例插件
-
-创建 `src/plugins/git/index.ts` 作为示例：
-
-```ts
-// src/plugins/git/index.ts
 import { exec } from "node:child_process";
 import { promisify } from "node:util";
 import { z } from "zod";
-import type { MiniHarnessPlugin, PluginContext } from "../../plugin/types.ts";
-import type { Tool } from "../../tools/types.ts";
+import type { Tool, ToolContext } from "./types.ts";
+import { register } from "./registry.ts";
 
 const execP = promisify(exec);
+
+async function git(args: string[], workspace: string) {
+  const { stdout } = await execP(`git ${args.join(" ")}`, {
+    cwd: workspace, timeout: 10_000, maxBuffer: 256 * 1024,
+  });
+  return stdout.trim();
+}
 
 const gitStatusTool: Tool = {
   name: "git-status",
-  description: "显示 Git 工作区状态",
-  inputSchema: { type: "object", properties: {}, required: [] },
-  async execute(_args, ctx) {
+  description: "查看 Git 工作区状态，返回已暂存/已修改/未跟踪文件列表。",
+  inputSchema: { type: "object", properties: {} },
+  async execute(_args: Record<string, unknown>, ctx: ToolContext) {
     try {
-      const { stdout } = await execP("git status --short", { cwd: ctx.workspace });
-      return { ok: true, output: stdout || "工作区干净" };
-    } catch (e) {
-      return { ok: false, error: String(e) };
-    }
+      const status = await git(["status", "--porcelain"], ctx.workspace);
+      if (!status) return { ok: true, output: "工作区干净，无未提交变更。" };
+      const lines = status.split("\n");
+      const staged = lines.filter(l => l[0] !== " " && l[0] !== "?").map(l => l.slice(3));
+      const modified = lines.filter(l => l[1] === "M").map(l => l.slice(3));
+      const untracked = lines.filter(l => l[0] === "?").map(l => l.slice(3));
+      const parts: string[] = [];
+      if (staged.length) parts.push(`已暂存: ${staged.join(", ")}`);
+      if (modified.length) parts.push(`已修改: ${modified.join(", ")}`);
+      if (untracked.length) parts.push(`未跟踪: ${untracked.join(", ")}`);
+      return { ok: true, output: parts.join("\n") || "无变更" };
+    } catch (e) { return { ok: false, error: String(e) }; }
   },
 };
 
 const gitDiffTool: Tool = {
   name: "git-diff",
-  description: "显示 Git diff",
+  description: "查看 Git 差异（已暂存或未暂存），返回 diff 内容。",
   inputSchema: {
     type: "object",
-    properties: {
-      cached: { type: "boolean", description: "是否只看暂存区" },
-    },
-    required: [],
+    properties: { staged: { type: "boolean", description: "是否查看已暂存的 diff，默认 true" } },
   },
-  async execute(args, ctx) {
-    const { cached = false } = z.object({ cached: z.boolean().default(false) }).parse(args);
+  async execute(args: Record<string, unknown>, ctx: ToolContext) {
+    const { staged = true } = z.object({ staged: z.boolean().default(true) }).parse(args);
     try {
-      const cmd = cached ? "git diff --cached" : "git diff";
-      const { stdout } = await execP(cmd, { cwd: ctx.workspace });
-      return { ok: true, output: stdout || "无差异" };
-    } catch (e) {
-      return { ok: false, error: String(e) };
-    }
+      const flag = staged ? "--cached" : "";
+      const stat = await git(["diff", flag, "--stat"], ctx.workspace);
+      if (!stat) return { ok: true, output: "无差异。" };
+      const detail = await git(["diff", flag, "--"], ctx.workspace);
+      const truncated = detail.length > 5000
+        ? detail.slice(0, 5000) + `\n...(diff 截断，共 ${detail.length} 字符)` : detail;
+      return { ok: true, output: `${stat}\n\n${truncated}` };
+    } catch (e) { return { ok: false, error: String(e) }; }
   },
 };
 
-export default function (_ctx: PluginContext): MiniHarnessPlugin {
-  return {
-    name: "git",
-    version: "1.0.0",
-    registerTools() {
-      return [gitStatusTool, gitDiffTool];
-    },
-    registerSafetyRules() {
-      return {
-        "git-status": "allow",
-        "git-diff": "allow",
-      };
-    },
-  };
+const gitCommitTool: Tool = {
+  name: "git-commit",
+  description: "提交已暂存的变更。需要 commit message。执行 git add -A + git commit。",
+  inputSchema: {
+    type: "object",
+    properties: { message: { type: "string", description: "Commit message" } },
+    required: ["message"],
+  },
+  async execute(args: Record<string, unknown>, ctx: ToolContext) {
+    const { message } = z.object({ message: z.string().min(1) }).parse(args);
+    try {
+      await git(["add", "-A"], ctx.workspace);
+      const result = await git(["commit", "-m", `"${message.replace(/"/g, '\\"')}"`], ctx.workspace);
+      return { ok: true, output: result };
+    } catch (e) { return { ok: false, error: String(e) }; }
+  },
+};
+
+export function registerGitTools() {
+  register(gitStatusTool);
+  register(gitDiffTool);
+  register(gitCommitTool);
 }
+```
+
+#### 第 2 步：注册并更新安全策略
+
+修改 `src/index.ts`：
+
+```ts
+import { registerGitTools } from "./tools/git-tools.ts";
+
+registerFileTools();
+registerGitTools();
+```
+
+修改 `src/safety/policy.ts`：
+
+```ts
+const DEFAULT_POLICY: Record<string, Permission> = {
+    // ... 已有
+    "git-status": "allow",
+    "git-diff": "allow",
+    "git-commit": "ask",
+};
+```
+
+#### 第 3 步：更新系统提示词
+
+在 `src/agent/system-prompt.ts` 追加：
+
+```ts
+// 在可用工具列表追加：
+// - git-status：查看工作区状态
+// - git-diff：查看代码差异
+// - git-commit：暂存并提交变更（需要 commit message）
+
+// 在工作规则追加：
+// 改完代码后用 git-status 查看变更，用 git-diff 确认内容，最后用 git-commit 提交
 ```
 
 ### 验收标准
 
-- [ ] 内置的 git 示例插件能自动发现并加载
-- [ ] 加载后 Agent 的工具列表里有 `git-status` 和 `git-diff`
-- [ ] 插件注册的安全规则生效（git 工具默认 allow）
-- [ ] 插件的 `onInit` 和 `onDestroy` 被正确调用
-- [ ] 插件加载失败不影响主程序启动
+- [ ] `git-status` 能正确返回工作区文件状态
+- [ ] `git-diff` 能返回已暂存/未暂存的 diff
+- [ ] `git-commit` 能执行 `git add -A + git commit -m "message"`
+- [ ] 安全策略生效：git-status/git-diff 为 allow，git-commit 为 ask
 
 ---
 
-## Phase 9.5 HTTP API 服务
+## 9.5 死循环检测与重试
 
-**目标**：把 Agent 暴露为 HTTP API，其他程序可以通过 REST 调用，通过 WebSocket 获取流式输出。
+**目标**：防止 Agent 用相同参数反复调用同一工具，LLM 调用失败自动重试。
 
-**你将学到**：HTTP 服务器、REST API 设计、WebSocket 流式传输、JSON 中间件。
+**参考**：OpenCode 的 doom_loop（3 次触发）[$TRAE_REF](https://opencode.ai/docs/permissions)，OpenCode 的双层重试架构（SDK 层 + session 层指数退避）。
 
-### 为什么要做
+### 设计思路
 
-现在 Agent 只能命令行用。如果你想让：
+OpenCode 的 `doom_loop` 本质是一个特殊 permission name，检测逻辑由工具调用层产生请求 [$TRAE_REF](https://opencode.ai/docs/permissions)。MiniHarness 简化为直接在 PreToolUse 钩子中检测。
 
-- VS Code 插件调用 Agent
-- Web 前端集成 Agent
-- CI/CD 管道自动调用 Agent
-
-就需要把 Agent 变成一个 HTTP 服务。
+OpenCode 的重试是双层：SDK 默认重试 2 次 + session 层指数退避 5 次 [$TRAE_REF](https://opencode.ai/docs/permissions)。MiniHarness 简化为单层指数退避 3 次。
 
 ### 具体步骤
 
-#### 第 1 步：用 Node.js 内置 http 模块搭建服务器
+#### 第 1 步：死循环检测器
 
-不引入 express 等框架，保持轻量：
+新建 `src/agent/loop-guard.ts`：
 
 ```ts
-// src/server/http.ts
-import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
-import { createProvider } from "../provider/index.ts";
-import { runAgent } from "../agent/index.ts";
-import { registerFileTools } from "../tools/index.ts";
-import { createSession, loadSession, listSessions } from "../session/index.ts";
-
-const PORT = 3000;
-const workspace = process.cwd();
-
-registerFileTools();
-const provider = createProvider();
-
-async function parseBody(req: IncomingMessage): Promise<unknown> {
-  return new Promise((resolve, reject) => {
-    let data = "";
-    req.on("data", chunk => data += chunk);
-    req.on("end", () => {
-      try { resolve(data ? JSON.parse(data) : {}); }
-      catch { reject(new Error("Invalid JSON")); }
-    });
-    req.on("error", reject);
-  });
+interface CallRecord {
+  toolName: string;
+  argHash: string;
+  count: number;
+  lastAttempt: number;
 }
 
-function sendJSON(res: ServerResponse, status: number, data: unknown) {
-  res.writeHead(status, { "Content-Type": "application/json" });
-  res.end(JSON.stringify(data));
+const MAX_REPEAT = 3;
+const WINDOW_MS = 60_000;
+const records: CallRecord[] = [];
+
+function hashArgs(args: Record<string, unknown>): string {
+  try {
+    return JSON.stringify(args, Object.keys(args).sort());
+  } catch {
+    return JSON.stringify(args);
+  }
 }
 
-export function startServer(port = PORT) {
-  const server = createServer(async (req, res) => {
-    res.setHeader("Access-Control-Allow-Origin", "*");
-    res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
-    res.setHeader("Access-Control-Allow-Headers", "Content-Type");
-    if (req.method === "OPTIONS") { res.writeHead(204); res.end(); return; }
+export function checkLoop(toolName: string, args: Record<string, unknown>): { blocked: boolean; reason?: string } {
+  const hash = hashArgs(args);
+  const now = Date.now();
+  const existing = records.find(r => r.toolName === toolName && r.argHash === hash);
 
-    const url = new URL(req.url!, `http://localhost:${port}`);
-    const path = url.pathname;
-    const method = req.method!;
-
-    try {
-      // POST /api/ask — 单轮任务
-      if (path === "/api/ask" && method === "POST") {
-        const body = await parseBody(req) as { task: string };
-        if (!body.task) { sendJSON(res, 400, { error: "task is required" }); return; }
-
-        const session = await createSession();
-        const result = await runAgent(body.task, provider, { workspace }, undefined, {
-          session,
-          safetyOptions: { autoApprove: true },
-        });
-        sendJSON(res, 200, {
-          answer: result.answer,
-          sessionId: session.id,
-          metrics: result.metrics,
-        });
-        return;
-      }
-
-      // GET /api/sessions — 列出会话
-      if (path === "/api/sessions" && method === "GET") {
-        const sessions = await listSessions();
-        sendJSON(res, 200, sessions.map(s => ({
-          id: s.id, title: s.title, state: s.state, updatedAt: s.updatedAt,
-        })));
-        return;
-      }
-
-      // GET /api/sessions/:id — 获取会话详情
-      const sessionMatch = path.match(/^\/api\/sessions\/([\w-]+)$/);
-      if (sessionMatch && method === "GET") {
-        const session = await loadSession(sessionMatch[1]!);
-        if (!session) { sendJSON(res, 404, { error: "Session not found" }); return; }
-        sendJSON(res, 200, session);
-        return;
-      }
-
-      // POST /api/chat — 多轮对话（恢复会话）
-      if (path === "/api/chat" && method === "POST") {
-        const body = await parseBody(req) as { sessionId: string; message: string };
-        const session = await loadSession(body.sessionId);
-        if (!session) { sendJSON(res, 404, { error: "Session not found" }); return; }
-
-        const result = await runAgent(body.message, provider, { workspace }, undefined, {
-          session,
-          safetyOptions: { autoApprove: true },
-        });
-        sendJSON(res, 200, { answer: result.answer, sessionId: session.id });
-        return;
-      }
-
-      sendJSON(res, 404, { error: "Not found", path });
-    } catch (e) {
-      sendJSON(res, 500, { error: String(e) });
+  if (existing) {
+    if (now - existing.lastAttempt > WINDOW_MS) {
+      existing.count = 1;
+      existing.lastAttempt = now;
+      return { blocked: false };
     }
-  });
+    existing.count++;
+    existing.lastAttempt = now;
+    if (existing.count >= MAX_REPEAT) {
+      return { blocked: true, reason: `工具 ${toolName} 以相同参数连续调用 ${existing.count} 次，疑似死循环。请改变策略或参数。` };
+    }
+  } else {
+    records.push({ toolName, argHash: hash, count: 1, lastAttempt: now });
+  }
+  return { blocked: false };
+}
 
-  server.listen(port, () => {
-    console.log(`MiniHarness API server running at http://localhost:${port}`);
-  });
-
-  return server;
+export function resetLoopGuard() {
+  records.length = 0;
 }
 ```
 
-#### 第 2 步：加 WebSocket 流式输出
+#### 第 2 步：通过 Hook 接入死循环检测
+
+在 `src/index.ts` 中注册为 PreToolUse 钩子：
 
 ```ts
-// src/server/websocket.ts
-import { WebSocketServer, type WebSocket } from "ws";
-import { createProvider } from "../provider/index.ts";
-import { runAgent, type LoopEvent } from "../agent/index.ts";
-import { createSession } from "../session/index.ts";
-import { registerFileTools } from "../tools/index.ts";
+import { onPreToolUse } from "./hooks/index.ts";
+import { checkLoop } from "./agent/loop-guard.ts";
 
-const workspace = process.cwd();
-registerFileTools();
-const provider = createProvider();
-
-export function startWebSocketServer(port: number) {
-  const wss = new WebSocketServer({ port });
-
-  wss.on("connection", (ws: WebSocket) => {
-    ws.on("message", async (data: Buffer) => {
-      let msg: { task: string };
-      try { msg = JSON.parse(data.toString()); }
-      catch { ws.send(JSON.stringify({ type: "error", error: "Invalid JSON" })); return; }
-
-      const session = await createSession();
-
-      ws.send(JSON.stringify({ type: "start", sessionId: session.id }));
-
-      try {
-        const result = await runAgent(msg.task, provider, { workspace }, undefined, {
-          session,
-          safetyOptions: { autoApprove: true },
-          onEvent: (e: LoopEvent) => {
-            ws.send(JSON.stringify(e));
-          },
-        });
-
-        ws.send(JSON.stringify({
-          type: "done",
-          answer: result.answer,
-          metrics: result.metrics,
-        }));
-      } catch (e) {
-        ws.send(JSON.stringify({ type: "error", error: String(e) }));
-      }
-    });
-  });
-
-  console.log(`WebSocket server running at ws://localhost:${port}`);
-  return wss;
-}
+onPreToolUse(({ toolName, args }) => {
+  const loop = checkLoop(toolName, args);
+  if (loop.blocked) return { type: "deny", reason: loop.reason! };
+  return { type: "continue" };
+});
 ```
 
-> 需要安装 `ws` 包：`pnpm add ws` 和 `pnpm add -D @types/ws`
+#### 第 3 步：LLM 调用重试
 
-#### 第 3 步：加 serve 命令
+新建 `src/agent/retry.ts`：
 
 ```ts
-// src/index.ts（追加）
-async function serve() {
-  const port = parseInt(rest[0] || "3000");
-  const wsPort = port + 1;
+const MAX_RETRIES = 3;
+const BASE_DELAY_MS = 1000;
 
-  const { startServer } = await import("./server/http.ts");
-  const { startWebSocketServer } = await import("./server/websocket.ts");
-
-  startServer(port);
-  startWebSocketServer(wsPort);
+export async function withRetry<T>(
+  fn: () => Promise<T>,
+  shouldRetry: (e: unknown) => boolean = () => true,
+): Promise<T> {
+  let lastError: unknown;
+  for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+    try {
+      return await fn();
+    } catch (e) {
+      lastError = e;
+      if (attempt === MAX_RETRIES || !shouldRetry(e)) throw e;
+      const delay = BASE_DELAY_MS * Math.pow(2, attempt);
+      await new Promise(r => setTimeout(r, delay));
+    }
+  }
+  throw lastError;
 }
 
-const commands: Record<string, () => Promise<void>> = {
-  // ... 已有的
-  serve,
-};
+export function isRetryableError(e: unknown): boolean {
+  const msg = e instanceof Error ? e.message : String(e);
+  return /timeout|rate.?limit|429|503|ECONNRESET|ECONNREFUSED/i.test(msg);
+}
 ```
 
-#### 第 4 步：测试 API
+#### 第 4 步：在 provider 调用处接入
 
-```bash
-# 启动服务
-pnpm dev serve 3000
+修改 `src/agent/loop.ts`：
 
-# 另一个终端测试
-curl -X POST http://localhost:3000/api/ask \
-  -H "Content-Type: application/json" \
-  -d '{"task": "读取 package.json 告诉我项目名"}'
+```ts
+import { withRetry, isRetryableError } from "./retry.ts";
 
-# 列出会话
-curl http://localhost:3000/api/sessions
+const stream = await withRetry(
+  () => provider.streamChat(messages, { model, tools: toolDefs, signal }),
+  isRetryableError,
+);
 ```
 
 ### 验收标准
 
-- [ ] `pnpm dev serve` 启动 HTTP 服务，监听 3000 端口
-- [ ] `POST /api/ask` 能执行任务并返回 JSON 结果
-- [ ] `GET /api/sessions` 能列出所有会话
-- [ ] WebSocket 连接能实时收到 Agent 的思考、工具调用、文本增量事件
-- [ ] API 报错时返回合理的 HTTP 状态码和错误信息
-- [ ] CORS 头正确设置，浏览器能跨域调用
+- [ ] 同一工具以相同参数连续调用 3 次后，第 4 次被拦截
+- [ ] 超过 1 分钟窗口后，相同参数调用不被拦截
+- [ ] LLM 调用超时/限流时，自动重试最多 3 次
+- [ ] 重试间隔为指数退避（1s → 2s → 4s）
+- [ ] 非重试错误不触发重试
 
 ---
 
-## 写在最后
+## 9.6 自定义命令
 
-Phase 9 完成后，你的 MiniHarness 已经是一个**真正可用的开发者工具**了：
+**目标**：用户可以定义 `:test` `:review` 等命令，扩展 Agent 的工作流。
 
-- 有完整的工具集（搜索、编辑、执行）
-- 有语义检索能力（RAG）
-- 能自动测试和修复代码
-- 支持插件扩展
-- 能作为 HTTP 服务被其他程序调用
+**参考**：Claude Code 的 `.claude/commands/*.md` [$TRAE_REF](https://code.claude.com/docs/en/sdk/sdk-slash-commands)，OpenCode 的 `.opencode/commands/*.md` [$TRAE_REF](https://opencode.ai/docs/commands)。
 
-**下一步探索方向**：
+### 设计思路
 
-- **多 Agent 协作**：多个 Agent 平等对话而非主子关系
-- **代码审查 Agent**：自动 PR Review + 安全漏洞检测
-- **持续记忆**：跨会话的知识库，Agent 记住你的项目约定
-- **GUI 客户端**：Web/Tauri 前端 + HTTP API 后端
+| | Claude Code | OpenCode | MiniHarness |
+|---|---|---|---|
+| 目录 | `.claude/commands/` | `.opencode/commands/` | `.anvil/commands/` |
+| 格式 | Markdown + frontmatter | Markdown + frontmatter | 纯 Markdown |
+| 参数 | `$ARGUMENTS` | `$ARGUMENTS` | `$ARGS` |
+| 触发 | `/command` | `/command` | `:command` |
 
-**慢慢来，比较快。**
+### 具体步骤
+
+#### 第 1 步：命令加载器
+
+新建 `src/cli/commands.ts`：
+
+```ts
+import { readdir, readFile } from "node:fs/promises";
+import { join } from "node:path";
+
+export interface CustomCommand {
+  name: string;
+  prompt: string;
+}
+
+const COMMANDS_DIR = ".anvil/commands";
+
+export async function loadCustomCommands(workspace: string): Promise<Map<string, CustomCommand>> {
+  const dir = join(workspace, COMMANDS_DIR);
+  const commands = new Map<string, CustomCommand>();
+  try {
+    const files = await readdir(dir);
+    for (const file of files) {
+      if (!file.endsWith(".md")) continue;
+      const name = file.slice(0, -3);
+      const content = await readFile(join(dir, file), "utf-8");
+      commands.set(name, { name, prompt: content.trim() });
+    }
+  } catch { /* 目录不存在，返回空 Map */ }
+  return commands;
+}
+
+export function formatCommandPrompt(cmd: CustomCommand, args: string): string {
+  return cmd.prompt.replaceAll("$ARGS", args);
+}
+```
+
+#### 第 2 步：在 REPL 中集成
+
+修改 `src/cli/repl.ts`：
+
+```ts
+import { loadCustomCommands, formatCommandPrompt } from "./commands.ts";
+
+// 在 REPL 初始化时加载命令：
+const customCommands = await loadCustomCommands(workspace);
+
+// 在 `:xxx` 命令解析中追加：
+const colonIdx = input.indexOf(":");
+if (colonIdx === 0) {
+  const [cmdName, ...rest] = input.slice(1).split(" ");
+  if (customCommands.has(cmdName)) {
+    const cmd = customCommands.get(cmdName)!;
+    const userArgs = rest.join(" ");
+    const prompt = formatCommandPrompt(cmd, userArgs);
+    await runAgent(prompt, provider, ctx, signal, { onEvent, session });
+    continue;
+  }
+}
+```
+
+#### 第 3 步：创建示例命令
+
+创建 `.anvil/commands/test.md`：
+
+```markdown
+运行项目的测试套件（pnpm test），分析任何失败的测试用例。
+
+如果有测试失败：
+1. 读取失败的测试文件
+2. 分析失败原因（断言不匹配、超时、异常等）
+3. 提出修复建议
+
+参数: $ARGS
+```
+
+创建 `.anvil/commands/review.md`：
+
+```markdown
+审查当前的 Git 差异（git-diff），从以下角度分析：
+
+1. 代码质量：命名、结构、可读性
+2. 潜在 bug：边界条件、空值处理、类型安全
+3. 安全性：输入验证、路径穿越、命令注入
+4. 性能：不必要的循环、重复计算
+
+输出格式：按严重程度排序的问题列表。
+```
+
+### 验收标准
+
+- [ ] `.anvil/commands/*.md` 被识别为自定义命令
+- [ ] 输入 `:test` 能触发对应提示词
+- [ ] `:test 运行所有测试` 中参数替换 `$ARGS`
+- [ ] 不存在的命令给出提示而非崩溃
+
+---
+
+## 9.7 自动测试与修复循环
+
+**目标**：Agent 改完代码后自动跑测试，失败就分析错误并修复，循环直到通过或达到上限。
+
+**参考**：Claude Code 的 PostToolUse 钩子自动格式化 [$TRAE_REF](https://code.claude.com/docs/en/hooks-guide)，OpenCode 的 `tool.execute.after` 钩子。
+
+### 设计思路
+
+这个能力**不通过 PostToolUse 钩子实现**，因为跑测试是 Agent 的主动行为，不是每次编辑都触发的被动行为。正确做法是：通过自定义命令 + 系统提示词引导 Agent 自主完成测试-修复循环。
+
+### 具体步骤
+
+#### 第 1 步：创建测试修复命令
+
+创建 `.anvil/commands/fix.md`：
+
+```markdown
+自动测试与修复循环。执行以下步骤：
+
+1. 用 mcp__shell__shell_run 运行 pnpm test
+2. 如果测试全部通过，用一句话总结结果并结束
+3. 如果有测试失败：
+   a. 用 mcp__fs__read_file 读取失败的测试文件和被测文件
+   b. 分析失败原因（断言不匹配、超时、异常、类型错误等）
+   c. 用 mcp__fs__edit_file 修复代码
+   d. 重新运行 pnpm test
+4. 最多重复 5 次修复尝试
+5. 如果 5 次后仍失败，总结剩余问题
+
+参数: $ARGS
+```
+
+#### 第 2 步：在系统提示词中引导
+
+在 `src/agent/system-prompt.ts` 的工作规则中追加：
+
+```ts
+// 在工作规则追加：
+// 改完代码后建议用 :fix 命令运行测试与修复循环
+// 测试失败时优先分析错误信息，不要盲目重试
+```
+
+#### 第 3 步：（可选）通过 PostToolUse 钩子自动提示
+
+在 `src/index.ts` 中注册一个提示钩子：
+
+```ts
+import { onPostToolUse } from "./hooks/index.ts";
+
+let editCount = 0;
+onPostToolUse(({ toolName }) => {
+  if (toolName === "write-file" || toolName === "mcp__fs__edit_file") {
+    editCount++;
+    if (editCount >= 3) {
+      console.error(`[hint] 已编辑 ${editCount} 次代码，考虑用 :fix 运行测试验证`);
+      editCount = 0;
+    }
+  }
+});
+```
+
+### 验收标准
+
+- [ ] `:fix` 命令能触发测试运行
+- [ ] 测试失败时 Agent 能分析错误并修复
+- [ ] 修复后自动重新运行测试
+- [ ] 最多 5 次修复尝试后停止
+- [ ] 编辑 3 次代码后显示测试提示
+
+---
+
+## 9.8 HTTP API 服务
+
+**目标**：把 MiniHarness 暴露为 HTTP API，其他程序能调用，用 SSE 流式输出。
+
+**参考**：OpenCode 的 client/server 架构 [$TRAE_REF](https://opencode.ai/docs/config)。
+
+### 设计思路
+
+OpenCode 用 Bun HTTP 服务器 + WebSocket。MiniHarness 用 Node.js 原生 `http` 模块 + SSE（Server-Sent Events），零新依赖。
+
+### 具体步骤
+
+#### 第 1 步：HTTP 服务器
+
+新建 `src/server/index.ts`：
+
+```ts
+import { createServer } from "node:http";
+import { createProvider } from "../provider/index.ts";
+import { runAgent, type LoopEvent } from "../agent/index.ts";
+import { registerFileTools } from "../tools/index.ts";
+import { MCPClient, registerMCPTools } from "../mcp/index.ts";
+import { mcpServersRaw, parseMCPServers } from "../config.ts";
+import { onPostToolUse } from "../hooks/index.ts";
+
+const ctrl = new AbortController();
+
+function parseBody(req: { on: (e: string, cb: (d?: unknown) => void) => void }): Promise<string> {
+  return new Promise((resolve) => {
+    let body = "";
+    req.on("data", (chunk: unknown) => { body += chunk; });
+    req.on("end", () => resolve(body));
+  });
+}
+
+export async function startServer(port = 3000) {
+  registerFileTools();
+  const provider = createProvider();
+  const workspace = process.cwd();
+
+  // 启动 MCP 服务器
+  const mcpServers = parseMCPServers(mcpServersRaw, workspace);
+  const mcpClients: MCPClient[] = [];
+  for (const cfg of mcpServers) {
+    const client = new MCPClient(cfg.name, cfg.command, cfg.args, cfg.env);
+    try {
+      await client.start();
+      await registerMCPTools(client, (t) => { /* register */ });
+      mcpClients.push(client);
+    } catch (e) {
+      console.error(`[MCP] ${cfg.name} 启动失败: ${e}`);
+    }
+  }
+
+  const server = createServer(async (req, res) => {
+    // CORS
+    res.setHeader("Access-Control-Allow-Origin", "*");
+    res.setHeader("Access-Control-Allow-Headers", "Content-Type");
+    if (req.method === "OPTIONS") { res.writeHead(204).end(); return; }
+
+    // POST /ask — SSE 流式输出
+    if (req.method === "POST" && req.url === "/ask") {
+      const body = await parseBody(req);
+      const { question, workspace: ws } = JSON.parse(body) as { question: string; workspace?: string };
+      if (!question) { res.writeHead(400).end("missing question"); return; }
+
+      res.writeHead(200, {
+        "Content-Type": "text/event-stream",
+        "Cache-Control": "no-cache",
+        "Connection": "keep-alive",
+      });
+
+      const send = (event: string, data: unknown) => {
+        res.write(`event: ${event}\n`);
+        res.write(`data: ${JSON.stringify(data)}\n\n`);
+      };
+
+      try {
+        const result = await runAgent(question, provider, { workspace: ws || workspace }, ctrl.signal, {
+          onEvent: (e: LoopEvent) => {
+            switch (e.type) {
+              case "thinking": send("thinking", { round: e.round }); break;
+              case "tool_call": send("tool_call", { name: e.name, args: e.args }); break;
+              case "tool_result": send("tool_result", { name: e.name, ok: e.ok, output: e.output }); break;
+              case "text_delta": send("text_delta", { delta: e.delta }); break;
+              case "answer": send("answer", { text: e.text }); break;
+              case "context_compressed": send("compressed", { before: e.beforeTokens, after: e.afterTokens }); break;
+            }
+          },
+        });
+        send("done", { metrics: result.metrics });
+      } catch (e) {
+        send("error", { message: String(e) });
+      }
+      res.end();
+      return;
+    }
+
+    // GET /health
+    if (req.method === "GET" && req.url === "/health") {
+      res.writeHead(200, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ status: "ok", tools: "file + mcp" }));
+      return;
+    }
+
+    res.writeHead(404).end("Not Found");
+  });
+
+  server.listen(port, () => {
+    console.log(`MiniHarness server: http://localhost:${port}`);
+    console.log(`  POST /ask      — SSE 流式问答`);
+    console.log(`  GET  /health   — 健康检查`);
+  });
+
+  process.on("SIGINT", () => {
+    ctrl.abort();
+    mcpClients.forEach(c => c.stop());
+    server.close();
+    process.exit(0);
+  });
+}
+```
+
+#### 第 2 步：注册子命令
+
+修改 `src/index.ts`，追加 `server` 命令：
+
+```ts
+import { startServer } from "./server/index.ts";
+
+async function server() {
+  const port = parseInt(rest[0] || "3000", 10);
+  await startServer(port);
+}
+
+const commands: Record<string, () => Promise<void>> = {
+  ask, chat, resume, sessions, subagent, eval: eval_, server
+};
+```
+
+#### 第 3 步：Barrel export
+
+新建 `src/server/index.ts` 的导出已在第 1 步包含。
+
+更新 USAGE：
+
+```ts
+const USAGE = `用法:
+  pnpm dev ask "你的问题"       # 单轮任务
+  pnpm dev chat                  # 多轮对话
+  pnpm dev server [port]         # HTTP API 服务（默认 3000）
+  ...
+`;
+```
+
+### 验收标准
+
+- [ ] `pnpm dev server` 启动 HTTP 服务
+- [ ] `GET /health` 返回 `{"status":"ok"}`
+- [ ] `POST /ask` 返回 SSE 流，包含 thinking/tool_call/text_delta/answer 事件
+- [ ] Ctrl+C 优雅关闭服务器和 MCP 子进程

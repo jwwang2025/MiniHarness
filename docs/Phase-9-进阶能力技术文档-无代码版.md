@@ -1,388 +1,369 @@
-# Phase 9：进阶能力技术文档（无代码版）
+# Phase 9：从「框架」到「编码工作流引擎」（无代码版）
 
-> 适用阶段：已完成 Phase 0-8
-> 目标：让 MiniHarness 从「框架」进化到「开发者工具」
-> 原则：每个子阶段独立可验收，完成一个再进下一个
+> 参考 Claude Code 和 OpenCode 的核心能力，合并原 Phase 9 和 Phase 10 的内容
+> 原则：轻量化（代码简洁不冗余，可以建子目录）、可扩展（接口优先）、零新依赖
+> 前置条件：已完成 Phase 0-8
 
 ---
 
 ## 目录
 
-- [Phase 9.0 总览](#phase-90-总览)
-- [Phase 9.1 增强工具集](#phase-91-增强工具集)
-- [Phase 9.2 RAG 语义检索](#phase-92-rag-语义检索)
-- [Phase 9.3 自动测试与修复循环](#phase-93-自动测试与修复循环)
-- [Phase 9.4 插件系统](#phase-94-插件系统)
-- [Phase 9.5 HTTP API 服务](#phase-95-http-api-服务)
+- [总览](#总览)
+- [9.1 Hook 生命周期系统](#91-hook-生命周期系统)
+- [9.2 项目记忆文件](#92-项目记忆文件)
+- [9.3 增强工具集（MCP 复用）](#93-增强工具集mcp-复用)
+- [9.4 Git 集成工具](#94-git-集成工具)
+- [9.5 死循环检测与重试](#95-死循环检测与重试)
+- [9.6 自定义命令](#96-自定义命令)
+- [9.7 自动测试与修复循环](#97-自动测试与修复循环)
+- [9.8 HTTP API 服务](#98-http-api-服务)
 
 ---
 
-## Phase 9.0 总览
+## 总览
 
-Phase 8 完成后，你有了完整的框架骨架。但回到实际使用场景，还缺几个关键能力：
+Phase 8 完成后，MiniHarness 有了完整骨架。对比 Claude Code 和 OpenCode，核心短板是：
 
-| 缺什么 | 做了之后 |
-|--------|---------|
-| 只有 read/write/list，没法搜索代码 | grep 工具 + diff 编辑工具 + shell 执行 |
-| Agent 只能靠翻文件找代码，不懂语义 | 代码库向量化，语义检索一步到位 |
-| 改完代码不知道对不对，要手动跑测试 | Agent 自己跑测试、分析失败、自动修复 |
-| 加工具只能改源码重新启动 | 插件系统，热加载外部工具包 |
-| 只能命令行用，没法集成到其他系统 | HTTP API，其他程序能调用你的 Agent |
+| 缺什么 | 做了之后 | 参考来源 |
+|--------|---------|---------|
+| 没有 Hook，无法插拔工具逻辑 | 不改 loop.ts 就能扩展审计/格式化/诊断 | Claude Code hooks [$TRAE_REF](https://code.claude.com/docs/en/hooks-guide) |
+| 每次会话从零开始，不知道项目约定 | AGENTS.md 自动加载+压缩后重注入 | Claude Code CLAUDE.md [$TRAE_REF](https://code.claude.com/docs/en/memory) |
+| 只有 read/write/list，没法搜索代码 | MCP filesystem 搜索+编辑+shell 执行 | OpenCode tools [$TRAE_REF](https://opencode.ai/docs/tools) |
+| Agent 不能自动提交代码 | git-status / git-diff / git-commit | Claude Code git workflow |
+| Agent 可能死循环，API 失败不重试 | doom-loop 检测 + 指数退避重试 | OpenCode doom_loop [$TRAE_REF](https://opencode.ai/docs/permissions) |
+| 用户无法定义自己的工作流 | `:test` `:review` 等自定义命令 | OpenCode commands [$TRAE_REF](https://opencode.ai/docs/commands) |
+| 改完代码不知道对不对 | Agent 自己跑测试、分析失败、自动修复 | Claude Code auto-test |
+| 只能命令行用，没法集成到其他系统 | HTTP API，SSE 流式输出 | OpenCode client/server |
 
 ### 子阶段依赖关系
 
 ```
-9.1 增强工具集（grep/edit/shell）  ←  地基
-         │
-    ┌────┴────┐
-    ▼         ▼
-9.2 RAG    9.3 自动测试与修复
-    │         │
-    └────┬────┘
-         ▼
-    9.4 插件系统
-         │
-         ▼
-    9.5 HTTP API
+9.1 Hook 系统 ← 地基，后续都依赖
+    │
+    ├── 9.2 项目记忆（Hook: SessionStart 加载）
+    ├── 9.3 增强工具集（Hook: PostToolUse 诊断）
+    ├── 9.4 Git 工具
+    ├── 9.5 死循环检测（Hook: PreToolUse 拦截）
+    │
+    └── 9.6 自定义命令
+            │
+            └── 9.7 自动测试与修复
+                    │
+                    └── 9.8 HTTP API
 ```
 
-**建议顺序**：9.1 必须先做，9.2 和 9.3 可以并行，9.4 需要前面都完成，9.5 放最后。
+### 建议顺序
+
+9.1 必须先做（后续阶段都通过 Hook 接入）。9.2-9.5 可以并行。9.6-9.8 按顺序。
 
 ---
 
-## Phase 9.1 增强工具集
+## 9.1 Hook 生命周期系统
 
-**目标**：补齐 Agent 的「眼睛和手」——搜索、精确编辑、执行命令。
+**目标**：在工具执行前/后插入可插拔的钩子函数。
 
-**你将学到**：MCP 生态复用、命令白名单安全模型、安全策略配置。
+**参考**：Claude Code 的 PreToolUse/PostToolUse [$TRAE_REF](https://code.claude.com/docs/en/hooks-guide)，OpenCode 的 `tool.execute.before`/`tool.execute.after`。
 
-**特点**：本阶段**零手写代码**，全部通过 MCP 服务器配置实现。
+### 设计思路
 
-### 为什么最先做
+Claude Code 用 shell 命令做钩子（JSON 配置驱动），MiniHarness 用 TypeScript 函数做钩子（代码驱动），更轻量、更类型安全。OpenCode 的钩子接口返回可修改的 output 对象 [$TRAE_REF](https://opencode.ai/docs/plugins)，MiniHarness 借鉴这个设计。
 
-现在 Agent 只有 read-file / write-file / list-dir 三个工具。实际编码任务中 Agent 需要：
+| | Claude Code | OpenCode | MiniHarness |
+|---|---|---|---|
+| 钩子定义 | JSON 配置 + shell 命令 | TypeScript 插件函数 | TypeScript 函数注册 |
+| 钩子类型 | command / prompt / notification | tool.execute.before / after | PreToolUse / PostToolUse |
+| 匹配方式 | regex matcher | 函数内自行判断 | 函数内自行判断 |
+| 返回值 | exit code (0/1/2) | 修改 output 对象 | HookAction 联合类型 |
 
-- **搜索**：在几百个文件里找某个函数定义 → 需要搜索工具
-- **精确编辑**：只改第 10 行而不是重写整个文件 → 需要编辑工具
-- **执行命令**：跑测试、装依赖、格式化代码 → 需要 shell 工具
+### 关键设计决策
 
-这三个能力是后续所有阶段的基础。
+**事件回调 vs Hook 的区别**：MiniHarness 现有 `opts.onEvent` 是只读观察者——只能看不能改。Hook 是拦截器——可以 deny、modify args、append output。
 
-### 设计思路：全部走 MCP，零手写代码
+**HookAction 的四种类型**：
+- `continue` → 放行
+- `deny` → 拒绝执行，Agent 收到原因
+- `modify` → 修改工具参数后继续
+- `append` → 执行后追加额外输出
 
-你的项目在 Phase 8 已经接入了 MCP 协议。搜索和编辑用已有的 filesystem MCP 服务器，shell 执行用社区最成熟的 mcp-shell-server。
+**注册函数返回取消注册函数**：`onPreToolUse(hook)` 返回一个 unregisfer 函数，调用后移除钩子。
+
+**顺序执行 + 短路**：PreToolUse 按注册顺序执行，任一返回 deny 即短路。PostToolUse 全部执行不短路。
+
+### 实现步骤清单
+
+1. 定义 Hook 类型：PreToolUseContext / PostToolUseContext / HookAction
+2. 实现 Hook 注册表：onPreToolUse / onPostToolUse / runPreToolUse / runPostToolUse
+3. 在 agent loop.ts 中接入：工具执行前调 runPreToolUse，执行后调 runPostToolUse
+4. 创建 barrel export（src/hooks/index.ts）
+5. 注册审计日志钩子作为示例验证
+
+### 验收标准
+
+- [ ] `onPreToolUse` 返回 `{ type: "deny" }` 时阻止执行，Agent 收到原因
+- [ ] `onPostToolUse` 在工具执行后被调用
+- [ ] 钩子注册返回取消函数，调用后不再触发
+- [ ] 不注册任何钩子时，行为和之前完全一致
+
+---
+
+## 9.2 项目记忆文件
+
+**目标**：Agent 启动时自动读取 `AGENTS.md`，把项目约定注入系统提示词。
+
+**参考**：Claude Code 的 CLAUDE.md [$TRAE_REF](https://code.claude.com/docs/en/memory)。Claude Code 在会话启动时加载 CLAUDE.md，压缩后通过 SessionStart 钩子重新注入。
+
+### 设计思路
+
+| | Claude Code | MiniHarness |
+|---|---|---|
+| 文件名 | CLAUDE.md | AGENTS.md |
+| 加载时机 | 会话启动 + 压缩后重注入 | 同左 |
+| 大小限制 | 200 行 / 25KB | 100 行 / 10KB |
+| 注入位置 | system prompt 尾部 | 同左 |
+
+### 关键设计决策
+
+**为什么叫 AGENTS.md**：避免和 Anthropic 商标冲突，也符合开源社区通用命名。
+
+**为什么限制 100 行 / 10KB**：MiniHarness 的上下文预算比 Claude Code 小（DeepSeek 通常 64K vs Claude 200K），注入太多会挤占可用上下文。
+
+**压缩后重注入**：上下文压缩会丢弃旧消息，包括 system 消息里的项目约定。压缩后必须重新加载 AGENTS.md，否则 Agent 会「忘记」项目规则 [$TRAE_REF](https://code.claude.com/docs/en/memory)。
+
+**为什么不做路径特定规则**：Claude Code 支持 `.claude/rules/` + `paths:` frontmatter，但需要路径匹配引擎。MiniHarness 用单文件，简单直接。
+
+### 实现步骤清单
+
+1. 实现记忆加载器：读取 AGENTS.md，按行数/字节数截断
+2. 实现系统提示词拼接：base prompt + 项目记忆
+3. 在 agent loop.ts 中注入：首轮加载记忆并拼入 system 消息
+4. 在 context.ts 压缩逻辑中重注入：压缩后重新加载 AGENTS.md
+5. 创建 AGENTS.md 模板文件
+
+### 验收标准
+
+- [ ] 有 AGENTS.md 时，系统提示词包含其内容
+- [ ] 没有 AGENTS.md 时，系统提示词和之前一致
+- [ ] AGENTS.md 超过 100 行被截断并标注
+- [ ] 上下文压缩后，AGENTS.md 被重新注入
+
+---
+
+## 9.3 增强工具集（MCP 复用）
+
+**目标**：补齐搜索、精确编辑、shell 执行，全部通过 MCP 配置实现，零手写代码。
+
+**参考**：OpenCode 内置 grep/glob/bash/edit 工具 [$TRAE_REF](https://opencode.ai/docs/tools)，但 MiniHarness 已有 MCP 协议，直接复用更轻量。
+
+### 设计思路
 
 | 能力 | MCP 服务器 | 工具名 | 状态 |
 |------|-----------|--------|------|
 | 搜索代码 | @modelcontextprotocol/server-filesystem | `mcp__fs__search_files` | 已配置 |
 | 精确编辑 | @modelcontextprotocol/server-filesystem | `mcp__fs__edit_file` | 已配置 |
-| 执行命令 | mcp-shell-server (tumf) | `mcp__shell__shell_execute` | 新增配置 |
-
-### 为什么选 mcp-shell-server
-
-社区有几个 shell MCP 服务器，`tumf/mcp-shell-server` 是最成熟的：
-
-- 296 次提交，MIT 许可，活跃维护
-- **命令白名单**：通过 `ALLOW_COMMANDS` 环境变量配置，不在白名单里的命令直接拒绝
-- **argv 执行**：命令以数组形式传递，不经过 shell 字符串解释（防注入）
-- **环境隔离**：子进程不继承父进程的密钥和 Token
-- **审计日志**：每次调用记录命令、耗时、退出码，敏感信息自动脱敏
-- **执行限制**：可配置超时（默认 30s，上限 300s）和输出大小上限（默认 1MB）
-- **参数硬化**：即使命令在白名单里，也会拦截 `find -exec`、`xargs`、`git -c` 等执行向量
+| 执行命令 | local-terminal-mcp | `mcp__shell__shell_run` | 新增 |
 
 ### 关键设计决策
 
-**双层安全模型**：mcp-shell-server 自身有命令白名单（第一层），只允许配置的命令执行；MiniHarness 的安全策略再加一层审批（第二层），用户可在执行前拒绝。即使白名单允许 `git`，用户仍可 deny。
+**为什么用 MCP 而不自己写工具**：MiniHarness 在 Phase 8 已经接入了 MCP 协议，filesystem MCP 服务器自带搜索和编辑工具，启动时自动注册。shell 执行用 local-terminal-mcp（Node.js，npx 直接跑，支持 Windows），内置命令白名单和危险命令拦截。
 
-**MCP 工具的安全策略**：MCP 工具注册到 registry 后默认是 `ask`，需要在 `DEFAULT_POLICY` 里为只读工具（search_files / read_file / list_directory）设为 `allow`，写操作（write_file / edit_file / create_directory / shell_execute）设为 `ask`。
+**双层安全模型**：MCP 工具自身有安全机制（shell 白名单）+ MiniHarness 的安全策略再加一层审批。即使白名单允许 `git`，用户仍可 deny。
 
-**命令数组而非字符串**：mcp-shell-server 的 `command` 参数是数组形式如 `["pnpm", "test"]`，而非字符串 `"pnpm test"`。这避免了 shell 注入风险，系统提示词需要提醒 Agent 用数组形式传参。
-
-**搜索 vs read-file 的边界**：search_files 是「找在哪」，read-file 是「看内容」。Agent 应该先搜索定位再读取，而不是一个个文件翻。
-
-**edit_file vs write-file 的边界**：edit_file 是「改一处」，write-file 是「全量重写」。小修改用 edit_file 更安全（不会误删其他内容），大重构才用 write-file。
+**命令白名单用正则前缀**：`ALLOW_COMMANDS=^ls,^cat,^git` 等正则前缀匹配，不在列表里的命令直接拒绝。不要加 `rm`、`curl`、`wget` 等危险命令。
 
 ### 实现步骤清单
 
-1. 安装 uv（Python 包管理器，类似 npx）
-2. 在 `.env` 的 `MINIHARNESS_MCP_SERVERS` 里加上 shell 服务器配置
-3. 在 safety/policy.ts 的 DEFAULT_POLICY 里为所有 MCP 工具配置安全策略
-4. 更新系统提示词，把所有 MCP 工具告诉 Agent（注意提醒数组传参）
-5. 在 eval 评测集里加上使用 search_files 和 shell_execute 的任务
+1. 修改 `.env`，在 `MINIHARNESS_MCP_SERVERS` 中追加 shell 服务器配置
+2. 在 safety/policy.ts 的 DEFAULT_POLICY 里为所有 MCP 工具配置安全策略
+3. 为 `mcp__shell__shell_run` 添加危险命令拦截（复用已有的 isDangerousCommand）
+4. 更新系统提示词，把 MCP 工具告诉 Agent
 
 ### 验收标准
 
-- [ ] 安装 uv，`uvx --version` 正常输出
-- [ ] 启动时控制台显示 `[MCP] shell: 1 个工具就绪`
-- [ ] `mcp__fs__search_files` 能搜索整个 src 目录，返回文件名+行号+匹配内容
-- [ ] `mcp__fs__edit_file` 能精确替换文件中的一段文本，不碰其他行
-- [ ] `mcp__shell__shell_execute` 能执行 `["pnpm","test"]` 并返回输出
-- [ ] 不在白名单的命令（如 `rm`）被 mcp-shell-server 拒绝
-- [ ] MCP 工具的安全策略生效（搜索 allow，shell execute ask）
-- [ ] 系统提示词已更新，Agent 知道并能调用这些工具
-- [ ] eval 评测集加了新任务，通过率不降
+- [ ] 启动时控制台显示 `[MCP] shell: N 个工具就绪`
+- [ ] `mcp__fs__search_files` 能搜索整个 src 目录
+- [ ] `mcp__fs__edit_file` 能精确替换文件文本
+- [ ] `mcp__shell__shell_run` 能执行 `pnpm test`
+- [ ] 不在白名单的命令（如 `rm`）被拒绝
+- [ ] 安全策略生效（搜索 allow，shell ask）
 
 ---
 
-## Phase 9.2 RAG 语义检索
+## 9.4 Git 集成工具
 
-**目标**：把代码库向量化，让 Agent 能用自然语言搜索代码。
+**目标**：Agent 能查看 git 状态、生成 commit message、自动提交。
 
-**你将学到**：向量嵌入（Embedding）、向量数据库、语义检索、索引管理。
-
-### 为什么要做
-
-grep 只能做正则匹配——你搜 `login` 能找到包含这个词的代码，但搜「处理用户认证的逻辑」就搜不到了。
-
-RAG 的思路是：把每段代码转成向量（一组数字），搜索时也把查询转成向量，然后算向量距离找最相关的代码段。
-
-### 核心设计
-
-整个 RAG 系统分四个部分：
-
-1. **分块器（Chunker）**：把代码文件按函数/段落切成小块（chunk），每块不超过 80 行
-2. **嵌入服务（Embedding Service）**：调 Embedding API 把文本转成向量
-3. **向量索引（Vector Index）**：存储 chunk + 向量，提供余弦相似度搜索
-4. **搜索工具（rag-search）**：Agent 调用，输入自然语言查询，返回 top-K 相关代码段
+**参考**：Claude Code 的 git workflow，OpenCode 的 `/undo`/`/redo`。
 
 ### 关键设计决策
 
-**分块策略**：按空行分块，每块 5-80 行。太短没上下文，太长 embedding 效果差且浪费 token。支持 .ts/.js/.py/.go 等主流语言。
+**专用工具而非裸 shell**：用 `mcp__shell__shell_run` 执行 git 问题是 Agent 需要知道 git 命令参数，容易出错。封装成 `git-status`、`git-commit` 等专用工具，参数更简单，安全策略更精确。
 
-**向量存储**：用 JSON 文件持久化（`.anvil/rag-index.json`），不引入外部向量数据库。余弦相似度计算在内存中做。项目规模在几千个 chunk 以内时性能足够。
+**git-commit 自动 add -A**：编码 Agent 的典型场景——改完代码直接提交。把 add + commit 合并到一个工具调用，减少工具调用轮数。
 
-**Embedding 模型**：用 OpenAI 的 `text-embedding-3-small`（1536 维，便宜）。也可以用本地模型或兼容 API。
+**diff 输出截断**：diff 可能很大，截断到 5000 字符并标注总长度，避免挤占上下文。
 
-**两个工具**：
-- `rag-index`：扫描代码库 → 分块 → embedding → 保存索引。只在首次或代码大改后运行
-- `rag-search`：输入自然语言 → embedding → 向量搜索 → 返回相关代码段
-
-**索引加载**：Agent 启动时自动加载已有索引文件，不需要每次重新建。
+**git-diff --stat 优先**：先返回 `--stat`（文件级摘要），再返回完整 diff。Agent 可以先看概览再决定是否深入。
 
 ### 实现步骤清单
 
-1. 定义 CodeChunk、SearchResult、RagIndex 类型
-2. 写分块器：递归扫描 + 按空行分块 + 跳过忽略目录
-3. 写 Embedding 服务：批量调用 API + 返回向量数组
-4. 写向量索引存储：JSON 持久化 + 余弦相似度搜索
-5. 写两个工具：rag-index（建索引）+ rag-search（搜索）
-6. 在 index.ts 注册工具，启动时加载已有索引
-7. 安全策略：两个工具都设为 allow
+1. 实现 git-status 工具：`git status --porcelain` 解析为 staged/modified/untracked
+2. 实现 git-diff 工具：支持 staged 参数，先 --stat 再完整 diff，超长截断
+3. 实现 git-commit 工具：`git add -A + git commit -m "message"`，message 转义
+4. 配置安全策略：git-status/git-diff 为 allow，git-commit 为 ask
+5. 在 index.ts 注册工具，更新系统提示词
 
 ### 验收标准
 
-- [ ] 运行 rag-index 能扫描整个 src 目录并生成索引文件
-- [ ] rag-search "处理工具注册的函数" 能返回 registry.ts 的相关代码段
-- [ ] 索引文件持久化，重启 Agent 不需要重新建索引
-- [ ] 索引超过 100 个 chunk 时搜索延迟 < 500ms
-- [ ] eval 里加了语义搜索任务，通过
+- [ ] `git-status` 能正确返回工作区文件状态
+- [ ] `git-diff` 能返回已暂存/未暂存的 diff
+- [ ] `git-commit` 能执行 `git add -A + git commit -m "message"`
+- [ ] 安全策略生效：git-status/git-diff 为 allow，git-commit 为 ask
 
 ---
 
-## Phase 9.3 自动测试与修复循环
+## 9.5 死循环检测与重试
 
-**目标**：Agent 改完代码后能自动跑测试，分析失败原因，自动修复，循环直到通过或达到重试上限。
+**目标**：防止 Agent 用相同参数反复调用同一工具，LLM 调用失败自动重试。
 
-**你将学到**：TDD 的 Agent 化、错误分析、重试策略、收敛检测。
-
-### 为什么要做
-
-现在 Agent 改完代码就结束了，不知道改对没有。如果 Agent 能：
-
-1. 改完代码 → 自动跑测试
-2. 测试失败 → 分析错误信息
-3. 针对性修复 → 再跑测试
-4. 循环直到通过或达到上限
-
-这就是一个真正的「AI 编程助手」该有的能力。
-
-### 核心设计
-
-```
-执行原始任务 → 跑测试
-                  │
-           通过 ←─┘ 否则 → 分析错误 → 修复代码 → 跑测试
-                                              │
-                                       通过 ←─┘ 否则 → 循环...
-```
+**参考**：OpenCode 的 doom_loop（3 次触发）[$TRAE_REF](https://opencode.ai/docs/permissions)，OpenCode 的双层重试架构（SDK 层 + session 层指数退避）。
 
 ### 关键设计决策
 
-**测试结果怎么判断通过**：exec 的退出码，0 = 通过，非 0 = 失败。即使失败也返回 stdout/stderr 内容，让 Agent 能分析错误。
+**调用指纹**：用 `JSON.stringify(args)` 做哈希，相同参数 = 相同指纹。排序 key 保证 `{a:1,b:2}` 和 `{b:2,a:1}` 指纹一致。
 
-**修复任务怎么构造**：把测试输出（截断到 4000 字符防上下文爆炸）+ 固定的修复指令模板拼成新任务，交给 Agent 执行。修复指令要求用 edit-file 精确修复，不要重写整个文件。
+**3 次阈值 + 1 分钟窗口**：参考 OpenCode 的 3 次触发 [$TRAE_REF](https://opencode.ai/docs/permissions)。1 分钟窗口意味着短时间连续重复才算死循环。
 
-**重试上限**：默认 3 次。防止无限循环烧钱。超过上限就返回所有尝试的历史记录。
+**阻断而非自动跳过**：检测到死循环后返回提示消息，让 Agent 自己决定下一步。
 
-**安全策略**：修复循环用 autoApprove: true，不需要人工确认（已经在一个受控的修复流程里了）。
+**通过 PreToolUse 钩子接入**：OpenCode 的 doom_loop 本质是特殊 permission name [$TRAE_REF](https://opencode.ai/docs/permissions)，MiniHarness 简化为直接在 PreToolUse 钩子中检测，更符合 Hook 优先的架构。
 
-**收敛检测**：如果连续两次修复都是同一个错误，说明 Agent 陷入了死循环，应该提前终止。这个可以作为进阶优化。
+**LLM 重试的指数退避**：1s → 2s → 4s，最多 3 次。OpenCode 是双层（SDK 默认 2 次 + session 层 5 次）[$TRAE_REF](https://opencode.ai/docs/permissions)，MiniHarness 简化为单层 3 次。
 
-### 三个核心组件
-
-**测试运行器**：执行测试命令，返回 { passed, output, error }。超时 60 秒。
-
-**修复循环器**：执行原始任务 → 跑测试 → 如果失败，构造修复任务（测试输出 + 修复指令）→ Agent 执行修复 → 再跑测试 → 循环。
-
-**结果记录**：每次尝试记录 attempt 号、是否通过、测试输出。最终返回是否成功、总尝试次数、所有尝试历史。
+**isRetryableError 的正则匹配**：`/timeout|rate.?limit|429|503|ECONNRESET|ECONNREFUSED/i`——覆盖常见瞬时错误。
 
 ### 实现步骤清单
 
-1. 定义 FixLoopOptions、FixAttemptResult、FixLoopResult 类型
-2. 写测试运行器：exec + 超时 + 输出收集
-3. 写修复循环器：执行任务 → 跑测试 → 失败则构造修复任务 → 循环
-4. 构造修复任务模板：测试输出 + 修复指令（用 edit-file 不要重写）
-5. 在 CLI 加 fix 命令：`pnpm dev fix "pnpm test" "任务描述"`
-6. 每次尝试通过 onAttempt 回调通知进度
+1. 实现死循环检测器：hashArgs + CallRecord + checkLoop + resetLoopGuard
+2. 注册为 PreToolUse 钩子
+3. 实现重试工具：withRetry + isRetryableError（指数退避）
+4. 在 provider streamChat 调用处包裹 withRetry
 
 ### 验收标准
 
-- [ ] fix 命令能自动跑循环
-- [ ] 循环最多重试 3 次，不会无限循环
-- [ ] 每次修复尝试后自动跑测试，结果记录在 attempts 里
-- [ ] 测试通过后立即停止
-- [ ] 所有尝试失败后输出最后一次测试结果
+- [ ] 同一工具以相同参数连续调用 3 次后，第 4 次被拦截
+- [ ] 超过 1 分钟窗口后，相同参数调用不被拦截
+- [ ] LLM 调用超时/限流时，自动重试最多 3 次
+- [ ] 重试间隔为指数退避（1s → 2s → 4s）
+- [ ] 非重试错误不触发重试
 
 ---
 
-## Phase 9.4 插件系统
+## 9.6 自定义命令
 
-**目标**：让用户能写一个 npm 包作为插件，不用改 MiniHarness 源码就能加新工具、新 Provider。
+**目标**：用户可以定义 `:test` `:review` 等命令，扩展 Agent 的工作流。
 
-**你将学到**：插件架构设计、动态加载、生命周期管理、接口契约。
+**参考**：Claude Code 的 `.claude/commands/*.md` [$TRAE_REF](https://code.claude.com/docs/en/sdk/sdk-slash-commands)，OpenCode 的 `.opencode/commands/*.md` [$TRAE_REF](https://opencode.ai/docs/commands)。
 
-### 为什么要做
+### 设计思路
 
-现在加工具要改 src/tools/ 下的文件然后重启。插件系统让你可以：
-
-```bash
-pnpm add miniharness-plugin-git   # 装 Git 插件
-# 下次启动自动加载，Agent 就有了 git 工具
-```
-
-### 核心设计
-
-插件是一个实现了 `MiniHarnessPlugin` 接口的 npm 包。接口包含：
-
-- **name + version**：插件标识
-- **registerTools(ctx)**：返回工具列表，自动注册到 registry
-- **registerProvider(ctx)**：返回 Provider 实例（可选）
-- **registerSafetyRules()**：返回工具→权限的映射（可选）
-- **onInit(ctx) / onDestroy()**：生命周期钩子
-
-**插件命名约定**：包名以 `miniharness-plugin-` 开头，加载器自动发现。
-
-**加载流程**：
-1. 读配置文件（`.anvil/plugins.json`）或自动扫描 node_modules
-2. 动态 import 插件包
-3. 调用默认导出函数，传入 PluginContext
-4. 调用 onInit
-5. 注册工具到 registry
-6. 注册安全规则到 policy
-7. 进程退出时调用 onDestroy
+| | Claude Code | OpenCode | MiniHarness |
+|---|---|---|---|
+| 目录 | `.claude/commands/` | `.opencode/commands/` | `.anvil/commands/` |
+| 格式 | Markdown + frontmatter | Markdown + frontmatter | 纯 Markdown |
+| 参数 | `$ARGUMENTS` | `$ARGUMENTS` | `$ARGS` |
+| 触发 | `/command` | `/command` | `:command` |
 
 ### 关键设计决策
 
-**插件能覆盖安全策略**：插件可以注册自己的安全规则（比如 git-status 默认 allow）。需要一个运行时可追加的策略表，在 checkPolicy 里优先查自定义规则。
+**用 `:command` 而非 `/command`**：MiniHarness 的 REPL 已经用 `:` 作为命令前缀（如 `:exit`），保持一致。
 
-**加载失败不阻塞**：单个插件加载失败只打日志，不影响主程序和其他插件启动。
+**纯 Markdown，不用 frontmatter**：Claude Code 和 OpenCode 用 frontmatter 定义命令元数据（如 `allowed-tools`、`mode`）。MiniHarness 简化为纯提示词模板——整个文件就是提示词，`$ARGS` 替换用户输入。
 
-**自动发现 vs 显式配置**：默认自动扫描 package.json 里的 `miniharness-plugin-*` 依赖。也支持用 `.anvil/plugins.json` 显式指定启用哪些。
+**不限制工具**：Claude Code 可以在 frontmatter 里限制命令能用的工具。MiniHarness 不做限制，安全策略由 safety/policy.ts 统一管理。
 
-**PluginContext 传什么**：workspace 路径 + 配置对象（从环境变量或配置文件来）。让插件能知道工作区在哪。
+**每次进 REPL 重新加载**：不缓存命令文件，每次启动 REPL 时重新读取。用户改了命令文件，重新进入 REPL 即可生效。
 
 ### 实现步骤清单
 
-1. 定义 MiniHarnessPlugin 接口 + PluginContext 类型
-2. 写插件加载器：自动发现 + 动态 import + 生命周期调用
-3. 写安全策略桥接：运行时可追加规则表 + checkPolicy 查询
-4. 在 safety/policy.ts 的 checkPolicy 里优先查自定义规则
-5. 在 index.ts 启动时加载插件，退出时调用 onDestroy
-6. 写一个内置的 git 示例插件（git-status + git-diff）
+1. 实现命令加载器：读取 `.anvil/commands/*.md`，解析为 name + prompt
+2. 实现 `$ARGS` 替换函数
+3. 在 repl.ts 中集成：解析 `:xxx` 命令，匹配自定义命令，注入提示词
+4. 创建示例命令：test.md、review.md
 
 ### 验收标准
 
-- [ ] 内置的 git 示例插件能自动发现并加载
-- [ ] 加载后 Agent 的工具列表里有 git-status 和 git-diff
-- [ ] 插件注册的安全规则生效
-- [ ] 插件的 onInit 和 onDestroy 被正确调用
-- [ ] 插件加载失败不影响主程序启动
+- [ ] `.anvil/commands/*.md` 被识别为自定义命令
+- [ ] 输入 `:test` 能触发对应提示词
+- [ ] `:test 运行所有测试` 中参数替换 `$ARGS`
+- [ ] 不存在的命令给出提示而非崩溃
 
 ---
 
-## Phase 9.5 HTTP API 服务
+## 9.7 自动测试与修复循环
 
-**目标**：把 Agent 暴露为 HTTP API，其他程序可以通过 REST 调用，通过 WebSocket 获取流式输出。
+**目标**：Agent 改完代码后自动跑测试，失败就分析错误并修复，循环直到通过或达到上限。
 
-**你将学到**：HTTP 服务器、REST API 设计、WebSocket 流式传输。
-
-### 为什么要做
-
-现在 Agent 只能命令行用。如果你想让：
-
-- VS Code 插件调用 Agent
-- Web 前端集成 Agent
-- CI/CD 管道自动调用 Agent
-
-就需要把 Agent 变成一个 HTTP 服务。
-
-### API 设计
-
-| 端点 | 方法 | 作用 |
-|------|------|------|
-| `/api/ask` | POST | 单轮任务，返回答案 + sessionId |
-| `/api/chat` | POST | 多轮对话，传入 sessionId + message |
-| `/api/sessions` | GET | 列出所有会话 |
-| `/api/sessions/:id` | GET | 获取会话详情 |
-| WebSocket | — | 流式输出，实时推送思考/工具调用/文本增量 |
+**参考**：Claude Code 的 PostToolUse 钩子自动格式化 [$TRAE_REF](https://code.claude.com/docs/en/hooks-guide)，OpenCode 的 `tool.execute.after` 钩子。
 
 ### 关键设计决策
 
-**不用框架**：用 Node.js 内置 http 模块，保持轻量，和项目的「零额外依赖」理念一致。WebSocket 用 `ws` 包（这是唯一需要加的依赖）。
+**不通过 PostToolUse 钩子实现**：跑测试是 Agent 的主动行为，不是每次编辑都触发的被动行为。正确做法是：通过自定义命令 + 系统提示词引导 Agent 自主完成测试-修复循环。
 
-**CORS**：设置 `Access-Control-Allow-Origin: *`，方便浏览器前端调用。
+**通过自定义命令实现**：创建 `.anvil/commands/fix.md`，命令内容就是测试-修复循环的 prompt 模板。Agent 执行 `:fix` 时自主完成循环。
 
-**安全策略**：API 模式下用 autoApprove: true，不交互式确认。生产环境应该加 API Key 鉴权。
+**最多 5 次修复**：防止无限循环，5 次后停止并总结剩余问题。
 
-**WebSocket 流式**：客户端连接后发 JSON `{ task: "..." }`，服务端把 LoopEvent 逐个推送回去。客户端能看到 Agent 的思考过程、工具调用、文本增量，而不是等最后才看到答案。
-
-**JSON body 解析**：简单实现，不引入 body-parser。读流 → 拼字符串 → JSON.parse。
+**PostToolUse 钩子做提示而非强制**：编辑 3 次代码后提示"考虑用 :fix 运行测试验证"，但不强制执行。
 
 ### 实现步骤清单
 
-1. 写 HTTP 服务器：用 http.createServer + 路由分发
-2. 实现 4 个 REST 端点：ask / chat / sessions / sessions/:id
-3. 加 CORS 头 + OPTIONS 预检处理
-4. 写 WebSocket 服务器：连接后收消息 → 调 runAgent → 推送 LoopEvent
-5. 在 CLI 加 serve 命令
-6. 用 curl 测试 REST API
+1. 创建 `.anvil/commands/fix.md`，内容是测试-修复循环的 prompt 模板
+2. 在系统提示词的工作规则中追加引导
+3. （可选）注册 PostToolUse 钩子，编辑 3 次后提示测试
 
 ### 验收标准
 
-- [ ] serve 命令启动 HTTP 服务，监听 3000 端口
-- [ ] POST /api/ask 能执行任务并返回 JSON 结果
-- [ ] GET /api/sessions 能列出所有会话
-- [ ] WebSocket 连接能实时收到 Agent 事件
-- [ ] API 报错时返回合理的 HTTP 状态码和错误信息
-- [ ] CORS 头正确设置
+- [ ] `:fix` 命令能触发测试运行
+- [ ] 测试失败时 Agent 能分析错误并修复
+- [ ] 修复后自动重新运行测试
+- [ ] 最多 5 次修复尝试后停止
+- [ ] 编辑 3 次代码后显示测试提示
 
 ---
 
-## 写在最后
+## 9.8 HTTP API 服务
 
-Phase 9 完成后，你的 MiniHarness 已经是一个**真正可用的开发者工具**了：
+**目标**：把 MiniHarness 暴露为 HTTP API，其他程序能调用，用 SSE 流式输出。
 
-- 有完整的工具集（搜索、编辑、执行）
-- 有语义检索能力（RAG）
-- 能自动测试和修复代码
-- 支持插件扩展
-- 能作为 HTTP 服务被其他程序调用
+**参考**：OpenCode 的 client/server 架构 [$TRAE_REF](https://opencode.ai/docs/config)。
 
-**下一步探索方向**：
+### 关键设计决策
 
-- **多 Agent 协作**：多个 Agent 平等对话而非主子关系
-- **代码审查 Agent**：自动 PR Review + 安全漏洞检测
-- **持续记忆**：跨会话的知识库，Agent 记住你的项目约定
-- **GUI 客户端**：Web/Tauri 前端 + HTTP API 后端
+**用 SSE 而非 WebSocket**：OpenCode 用 Bun HTTP + WebSocket。MiniHarness 用 Node.js 原生 `http` 模块 + SSE（Server-Sent Events），零新依赖。SSE 是单向推送，刚好满足 Agent 结果流式输出的场景。
 
-**慢慢来，比较快。**
+**SSE 事件映射**：MiniHarness 的 LoopEvent 有 7 种类型，直接映射为 SSE 事件：
+- `thinking` → `event: thinking`
+- `tool_call` → `event: tool_call`
+- `tool_result` → `event: tool_result`
+- `text_delta` → `event: text_delta`
+- `answer` → `event: answer`
+- `context_compressed` → `event: compressed`
+- `done` → `event: done`
+
+**CORS 支持**：允许跨域调用，方便浏览器端直接连接。
+
+**优雅关闭**：Ctrl+C 时先 abort agent loop、停止 MCP 子进程、再关闭 HTTP 服务器。
+
+### 实现步骤清单
+
+1. 实现 HTTP 服务器：`POST /ask` 返回 SSE 流，`GET /health` 健康检查
+2. 在 SSE 流中映射 LoopEvent 为 SSE 事件
+3. 注册 `server` 子命令到 CLI
+4. 处理优雅关闭
+
+### 验收标准
+
+- [ ] `pnpm dev server` 启动 HTTP 服务
+- [ ] `GET /health` 返回 `{"status":"ok"}`
+- [ ] `POST /ask` 返回 SSE 流，包含 thinking/tool_call/text_delta/answer 事件
+- [ ] Ctrl+C 优雅关闭服务器和 MCP 子进程
