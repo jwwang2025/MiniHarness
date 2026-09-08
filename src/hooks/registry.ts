@@ -19,17 +19,24 @@ export function onPostToolUse(hook: PostToolUseHook) {
   };
 }
 
+export interface PreToolUseResult {
+  action: HookAction;
+  appends: string[];
+}
+
 export async function runPreToolUse(ctx: {
   toolName: string;
   args: Record<string, unknown>;
   workspace: string;
-}): Promise<HookAction> {
+}): Promise<PreToolUseResult> {
+  const appends: string[] = [];
   for (const hook of preHooks) {
     const action = await hook(ctx);
-    if (action.type === "deny") return action;
+    if (action.type === "deny") return { action, appends };
     if (action.type === "modify") Object.assign(ctx.args, action.patch);
+    if (action.type === "append") appends.push(action.extraOutput);
   }
-  return { type: "continue" };
+  return { action: { type: "continue" }, appends };
 }
 
 export async function runPostToolUse(ctx: {

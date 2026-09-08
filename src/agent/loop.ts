@@ -195,10 +195,10 @@ export async function runAgent(
       }
 
       // --- Hook: PreToolUse ---
-      const preAction = await runPreToolUse({ toolName: tc.name, args, workspace: ctx.workspace });
-      if (preAction.type === "deny") {
+      const preResult = await runPreToolUse({ toolName: tc.name, args, workspace: ctx.workspace });
+      if (preResult.action.type === "deny") {
         collector.startToolCall(tc.name);
-        const out = `[操作被拒] Hook 拦截: ${preAction.reason}`;
+        const out = `[操作被拒] Hook 拦截: ${preResult.action.reason}`;
         toolResults.push({ callId: tc.id, output: out });
         collector.endToolCall(false, "deny");
         opts.onEvent?.({ type: "tool_result", name: tc.name, output: out, ok: false });
@@ -212,6 +212,17 @@ export async function runAgent(
 
       // --- Hook: PostToolUse ---
       await runPostToolUse({ toolName: tc.name, args, result, workspace: ctx.workspace });
+
+      // --- Hook: append — 追加 PreToolUse 钩子的额外输出到工具结果 ---
+      if (preResult.appends.length > 0) {
+        const extra = preResult.appends.join("\n");
+        if (result.ok) {
+          result.output = result.output ? `${result.output}\n${extra}` : extra;
+        } else {
+          result.error = result.error ? `${result.error}\n${extra}` : extra;
+        }
+      }
+
       const output = result.ok ? clipToolOutput(result.output) : `[错误] ${result.error}`;
       toolResults.push({ callId: tc.id, output });
       opts.onEvent?.({ type: "tool_result", name: tc.name, output, ok: result.ok });
