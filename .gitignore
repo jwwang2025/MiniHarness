@@ -49,3 +49,6 @@ desktop.ini
 .cache/
 .eslintcache
 .stylelintcache
+
+# MiniHarness local data
+.anvil/
