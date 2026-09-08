@@ -10,6 +10,7 @@ import { createProvider } from "./provider/index.ts";
 import { formatMetrics } from "./telemetry/index.ts";
 import { MCPClient, registerMCPTools } from "./mcp/index.ts";
 import { mcpServersRaw, parseMCPServers } from "./config.ts";
+import { onPostToolUse } from "./hooks/index.ts";
 const provider = createProvider();
 
 const [, , cmd, ...rest] = process.argv;
@@ -51,6 +52,14 @@ for (const cfg of mcpServers) {
   }
 }
 process.on("exit", () => mcpClients.forEach((c) => c.stop()));
+
+// --- Hook: 审计日志 ---
+onPostToolUse(({ toolName, result }) => {
+  const ts = new Date().toISOString();
+  const status = result.ok ? "OK" : "FAIL";
+  const detail = result.ok ? result.output?.slice(0, 80) : result.error?.slice(0, 80);
+  console.error(`[audit] ${ts} ${toolName} ${status} ${detail ?? ""}`);
+});
 
 const USAGE = `用法:
   pnpm dev ask "你的问题"          # 单轮任务（自动建会话）
