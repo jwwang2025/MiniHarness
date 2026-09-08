@@ -17,6 +17,10 @@ import { checkPolicy, approve, type ToolInvocation, type SafetyOptions } from ".
 */
 import { saveSession, type Session } from "../session/index.ts";
 import { TelemetryCollector, type RunMetrics } from "../telemetry/index.ts";
+/* feat/hook-lifecycle
+*----------------------------------------------------------------
+*/
+import { runPreToolUse, runPostToolUse } from "../hooks/index.ts";
 
 const MAX_ROUNDS = 10;
 
@@ -190,10 +194,24 @@ export async function runAgent(
         continue;
       }
 
+      // --- Hook: PreToolUse ---
+      const preAction = await runPreToolUse({ toolName: tc.name, args, workspace: ctx.workspace });
+      if (preAction.type === "deny") {
+        collector.startToolCall(tc.name);
+        const out = `[操作被拒] Hook 拦截: ${preAction.reason}`;
+        toolResults.push({ callId: tc.id, output: out });
+        collector.endToolCall(false, "deny");
+        opts.onEvent?.({ type: "tool_result", name: tc.name, output: out, ok: false });
+        continue;
+      }
+
       // 审批通过后才开始计时——durationMs 只含 tool.execute 本身，不含审批等待
       collector.startToolCall(tc.name);
       const result = await tool.execute(args, ctx);
       collector.endToolCall(result.ok, permission);
+
+      // --- Hook: PostToolUse ---
+      await runPostToolUse({ toolName: tc.name, args, result, workspace: ctx.workspace });
       const output = result.ok ? clipToolOutput(result.output) : `[错误] ${result.error}`;
       toolResults.push({ callId: tc.id, output });
       opts.onEvent?.({ type: "tool_result", name: tc.name, output, ok: result.ok });
