@@ -433,143 +433,159 @@ export const SYSTEM_PROMPT = `你是一个编码 Agent，工作在一个受限�
 
 ---
 
-## 9.4 Git 集成工具
+## 9.4 Git 集成工具（MCP 复用）
 
-**目标**：Agent 能查看 git 状态、生成 commit message、自动提交。
+**目标**：Agent 能查看 git 状态、生成 commit message、自动提交，全部通过 MCP 配置实现，零手写代码。
 
-**参考**：Claude Code 的 git workflow，OpenCode 的 `/undo`/`/redo`。
+**参考**：Claude Code 的 git workflow。使用社区 Git MCP 服务器 `@cyanheads/git-mcp-server` [$TRAE_REF](https://github.com/cyanheads/git-mcp-server)（412 次提交，28 个 Git 工具，Apache 2.0 协议）。
+
+### 设计思路
+
+| | 手写 git-tools.ts | @cyanheads/git-mcp-server |
+|---|---|---|
+| 工具数量 | 3 个（status/diff/commit） | 28 个（含 branch/merge/rebase/push/stash/tag 等） |
+| 代码量 | ~80 行 | 零行（纯配置） |
+| 安全 | 自定义拦截 | 内置路径沙箱 + 破坏性操作确认 + 参数防注入 |
+| 维护 | 自己维护 | 社区维护，持续更新 |
+
+`@cyanheads/git-mcp-server` 提供的 28 个工具按类别：
+
+| 类别 | 工具 | 说明 |
+|------|------|------|
+| 仓库管理 | `git_status` / `git_init` / `git_clone` / `git_clean` | 状态、初始化、克隆、清理 |
+| 暂存提交 | `git_add` / `git_commit` / `git_diff` | 暂存、提交、差异 |
+| 历史查看 | `git_log` / `git_show` / `git_blame` / `git_reflog` | 日志、对象、追溯 |
+| 分支合并 | `git_branch` / `git_checkout` / `git_merge` / `git_rebase` / `git_cherry_pick` | 分支管理 |
+| 远程操作 | `git_remote` / `git_fetch` / `git_pull` / `git_push` | 远程同步 |
+| 高级工作流 | `git_tag` / `git_stash` / `git_reset` / `git_worktree` 等 | 标签、暂存、重置 |
 
 ### 具体步骤
 
-#### 第 1 步：Git 工具集
+#### 第 1 步：配置 .env
 
-新建 `src/tools/git-tools.ts`：
+修改 `.env`，在 `MINIHARNESS_MCP_SERVERS` 中追加 git 服务器：
 
-```ts
-import { exec } from "node:child_process";
-import { promisify } from "node:util";
-import { z } from "zod";
-import type { Tool, ToolContext } from "./types.ts";
-import { register } from "./registry.ts";
-
-const execP = promisify(exec);
-
-async function git(args: string[], workspace: string) {
-  const { stdout } = await execP(`git ${args.join(" ")}`, {
-    cwd: workspace, timeout: 10_000, maxBuffer: 256 * 1024,
-  });
-  return stdout.trim();
-}
-
-const gitStatusTool: Tool = {
-  name: "git-status",
-  description: "查看 Git 工作区状态，返回已暂存/已修改/未跟踪文件列表。",
-  inputSchema: { type: "object", properties: {} },
-  async execute(_args: Record<string, unknown>, ctx: ToolContext) {
-    try {
-      const status = await git(["status", "--porcelain"], ctx.workspace);
-      if (!status) return { ok: true, output: "工作区干净，无未提交变更。" };
-      const lines = status.split("\n");
-      const staged = lines.filter(l => l[0] !== " " && l[0] !== "?").map(l => l.slice(3));
-      const modified = lines.filter(l => l[1] === "M").map(l => l.slice(3));
-      const untracked = lines.filter(l => l[0] === "?").map(l => l.slice(3));
-      const parts: string[] = [];
-      if (staged.length) parts.push(`已暂存: ${staged.join(", ")}`);
-      if (modified.length) parts.push(`已修改: ${modified.join(", ")}`);
-      if (untracked.length) parts.push(`未跟踪: ${untracked.join(", ")}`);
-      return { ok: true, output: parts.join("\n") || "无变更" };
-    } catch (e) { return { ok: false, error: String(e) }; }
-  },
-};
-
-const gitDiffTool: Tool = {
-  name: "git-diff",
-  description: "查看 Git 差异（已暂存或未暂存），返回 diff 内容。",
-  inputSchema: {
-    type: "object",
-    properties: { staged: { type: "boolean", description: "是否查看已暂存的 diff，默认 true" } },
-  },
-  async execute(args: Record<string, unknown>, ctx: ToolContext) {
-    const { staged = true } = z.object({ staged: z.boolean().default(true) }).parse(args);
-    try {
-      const flag = staged ? "--cached" : "";
-      const stat = await git(["diff", flag, "--stat"], ctx.workspace);
-      if (!stat) return { ok: true, output: "无差异。" };
-      const detail = await git(["diff", flag, "--"], ctx.workspace);
-      const truncated = detail.length > 5000
-        ? detail.slice(0, 5000) + `\n...(diff 截断，共 ${detail.length} 字符)` : detail;
-      return { ok: true, output: `${stat}\n\n${truncated}` };
-    } catch (e) { return { ok: false, error: String(e) }; }
-  },
-};
-
-const gitCommitTool: Tool = {
-  name: "git-commit",
-  description: "提交已暂存的变更。需要 commit message。执行 git add -A + git commit。",
-  inputSchema: {
-    type: "object",
-    properties: { message: { type: "string", description: "Commit message" } },
-    required: ["message"],
-  },
-  async execute(args: Record<string, unknown>, ctx: ToolContext) {
-    const { message } = z.object({ message: z.string().min(1) }).parse(args);
-    try {
-      await git(["add", "-A"], ctx.workspace);
-      const result = await git(["commit", "-m", `"${message.replace(/"/g, '\\"')}"`], ctx.workspace);
-      return { ok: true, output: result };
-    } catch (e) { return { ok: false, error: String(e) }; }
-  },
-};
-
-export function registerGitTools() {
-  register(gitStatusTool);
-  register(gitDiffTool);
-  register(gitCommitTool);
-}
+```env
+MINIHARNESS_MCP_SERVERS="fs:npx -y @modelcontextprotocol/server-filesystem .;
+mem:npx -y @modelcontextprotocol/server-memory|MEMORY_FILE_PATH=${workspace}/.anvil/mcp-memory.jsonl;
+shell:npx -y local-terminal-mcp|ALLOW_COMMANDS=^ls,^cat,^pwd,^grep,^wc,^find,^node,^npx,^pnpm,^tsc,^git,^mkdir,^cp,^mv;
+git:npx -y @cyanheads/git-mcp-server@latest|GIT_BASE_DIR=${workspace}"
 ```
 
-#### 第 2 步：注册并更新安全策略
+关键环境变量：
+- `GIT_BASE_DIR`：限制所有 git 操作在该目录树下（路径沙箱）
+- `GIT_AUTHOR_NAME` / `GIT_AUTHOR_EMAIL`：可选，覆盖 git 提交者身份
+- `GIT_SIGN_COMMITS`：可选，默认 `true`（GPG 签名，失败时静默降级）
 
-修改 `src/index.ts`：
+#### 第 2 步：配置安全策略
 
-```ts
-import { registerGitTools } from "./tools/git-tools.ts";
-
-registerFileTools();
-registerGitTools();
-```
-
-修改 `src/safety/policy.ts`：
+修改 `src/safety/policy.ts` 的 `DEFAULT_POLICY`，为 Git MCP 工具分配合适权限：
 
 ```ts
 const DEFAULT_POLICY: Record<string, Permission> = {
-    // ... 已有
-    "git-status": "allow",
-    "git-diff": "allow",
-    "git-commit": "ask",
+    // ... 已有的 read-file / write-file / fs / mem / shell 工具
+
+    // Git MCP 工具 — 只读操作 allow，写操作 ask，破坏性操作 deny
+    "mcp__git__git_status": "allow",
+    "mcp__git__git_diff": "allow",
+    "mcp__git__git_log": "allow",
+    "mcp__git__git_show": "allow",
+    "mcp__git__git_blame": "allow",
+    "mcp__git__git_reflog": "allow",
+    "mcp__git__git_branch": "allow",        // 列出分支
+    "mcp__git__git_remote": "allow",         // 查看远程
+    "mcp__git__git_add": "ask",
+    "mcp__git__git_commit": "ask",
+    "mcp__git__git_checkout": "ask",
+    "mcp__git__git_merge": "ask",
+    "mcp__git__git_rebase": "ask",
+    "mcp__git__git_cherry_pick": "ask",
+    "mcp__git__git_stash": "ask",
+    "mcp__git__git_tag": "ask",
+    "mcp__git__git_fetch": "ask",
+    "mcp__git__git_pull": "ask",
+    "mcp__git__git_push": "ask",
+    "mcp__git__git_reset": "deny",           // 破坏性
+    "mcp__git__git_clean": "deny",           // 破坏性
+    "mcp__git__git_init": "ask",
+    "mcp__git__git_clone": "ask",
+    "mcp__git__git_worktree": "ask",
 };
 ```
 
-#### 第 3 步：更新系统提示词
+#### 第 3 步：为破坏性 git 命令添加拦截
 
-在 `src/agent/system-prompt.ts` 追加：
+在 `src/safety/policy.ts` 的 `checkPolicy()` 中追加对 git 工具的路径检查：
 
 ```ts
-// 在可用工具列表追加：
-// - git-status：查看工作区状态
-// - git-diff：查看代码差异
-// - git-commit：暂存并提交变更（需要 commit message）
+// Git MCP 工具 — 检查 repoPath 参数是否在工作区内
+if (toolName.startsWith("mcp__git__") && typeof args.repoPath === "string") {
+    const safe = inWorkspace(workspace, args.repoPath);
+    if (!safe) {
+        logger?.({ kind: "deny", tool: toolName, reason: `路径越界：${args.repoPath}` });
+        return "deny";
+    }
+}
+```
 
-// 在工作规则追加：
-// 改完代码后用 git-status 查看变更，用 git-diff 确认内容，最后用 git-commit 提交
+#### 第 4 步：更新系统提示词
+
+修改 `src/agent/system-prompt.ts`，追加 Git 工具说明：
+
+```ts
+export const SYSTEM_PROMPT = `你是一个编码 Agent，工作在一个受限工作区内。
+
+可用工具：
+- read-file / list-dir：内置文件读取和目录列表
+- write-file：创建或覆盖文件
+- mcp__fs__search_files：正则搜索文件内容，返回文件路径和匹配行
+- mcp__fs__edit_file：精确编辑文件（替换指定文本，不覆盖整个文件）
+- mcp__fs__read_file / mcp__fs__list_directory：MCP 版本的文件读取和目录列表
+- mcp__shell__shell_run：执行 shell 命令（有安全限制，危险命令会被拦截）
+- mcp__mem__*：跨会话记忆工具（存储/检索知识）
+- mcp__git__git_status：查看 Git 工作区状态
+- mcp__git__git_diff：查看 Git 差异（已暂存或未暂存）
+- mcp__git__git_log：查看提交历史
+- mcp__git__git_add：暂存文件
+- mcp__git__git_commit：提交变更
+- mcp__git__git_branch / mcp__git__git_checkout：分支管理
+- mcp__git__git_push / mcp__git__git_pull：远程同步
+
+工作规则：
+1. 改文件前必须先 read-file 或 mcp__fs__read_file 确认当前内容
+2. 小范围修改优先用 mcp__fs__edit_file，大范围重写才用 write-file
+3. 找代码定义用 mcp__fs__search_files，不要一个个文件翻
+4. 改完代码可以用 mcp__shell__shell_run 跑测试或格式化
+5. 改完代码后用 mcp__git__git_status 查看变更，用 mcp__git__git_diff 确认内容，最后用 mcp__git__git_commit 提交
+6. 工具失败时分析原因再重试，不要盲目重复
+7. 任务完成后用一句话总结结果
+
+工具结果会被裁剪以节省上下文，省略部分用 [...省略 N 行...] 标记。`;
+```
+
+### 双层安全模型
+
+```
+Agent 要执行 git push --force
+         │
+    MiniHarness 安全策略 (deny)          ← 第一层：DEFAULT_POLICY["mcp__git__git_push"] = "ask"
+         │ 用户批准
+         ▼
+    @cyanheads/git-mcp-server 内置安全    ← 第二层：路径沙箱 + 参数防注入
+         │ GIT_BASE_DIR 限制
+         ▼
+    git push 执行
 ```
 
 ### 验收标准
 
-- [ ] `git-status` 能正确返回工作区文件状态
-- [ ] `git-diff` 能返回已暂存/未暂存的 diff
-- [ ] `git-commit` 能执行 `git add -A + git commit -m "message"`
-- [ ] 安全策略生效：git-status/git-diff 为 allow，git-commit 为 ask
+- [ ] 启动时控制台显示 `[MCP] git: 28 个工具就绪`
+- [ ] `mcp__git__git_status` 能正确返回工作区文件状态
+- [ ] `mcp__git__git_diff` 能返回已暂存/未暂存的 diff
+- [ ] `mcp__git__git_commit` 能提交变更（需要用户审批）
+- [ ] `mcp__git__git_log` 能查看提交历史
+- [ ] 安全策略生效：status/diff/log 为 allow，commit/push 为 ask，reset/clean 为 deny
+- [ ] `GIT_BASE_DIR` 外的路径被拒绝
 
 ---
 

@@ -188,36 +188,52 @@ Claude Code 用 shell 命令做钩子（JSON 配置驱动），MiniHarness 用 T
 
 ---
 
-## 9.4 Git 集成工具
+## 9.4 Git 集成工具（MCP 复用）
 
-**目标**：Agent 能查看 git 状态、生成 commit message、自动提交。
+**目标**：Agent 能查看 git 状态、生成 commit message、自动提交，全部通过 MCP 配置实现，零手写代码。
 
-**参考**：Claude Code 的 git workflow，OpenCode 的 `/undo`/`/redo`。
+**参考**：Claude Code 的 git workflow。使用社区 Git MCP 服务器 `@cyanheads/git-mcp-server` [$TRAE_REF](https://github.com/cyanheads/git-mcp-server)（412 次提交，28 个 Git 工具，Apache 2.0 协议）。
+
+### 设计思路
+
+| | 手写 git-tools.ts | @cyanheads/git-mcp-server |
+|---|---|---|
+| 工具数量 | 3 个（status/diff/commit） | 28 个（含 branch/merge/rebase/push/stash/tag 等） |
+| 代码量 | ~80 行 | 零行（纯配置） |
+| 安全 | 自定义拦截 | 内置路径沙箱 + 破坏性操作确认 + 参数防注入 |
+| 维护 | 自己维护 | 社区维护，持续更新 |
+
+`@cyanheads/git-mcp-server` 提供的 28 个工具按类别：仓库管理（status/init/clone/clean）、暂存提交（add/commit/diff）、历史查看（log/show/blame/reflog）、分支合并（branch/checkout/merge/rebase/cherry_pick）、远程操作（remote/fetch/pull/push）、高级工作流（tag/stash/reset/worktree 等）。
 
 ### 关键设计决策
 
-**专用工具而非裸 shell**：用 `mcp__shell__shell_run` 执行 git 问题是 Agent 需要知道 git 命令参数，容易出错。封装成 `git-status`、`git-commit` 等专用工具，参数更简单，安全策略更精确。
+**为什么用 MCP 而不自己写**：和 9.3 增强工具集一样的决策——MiniHarness 在 Phase 8 已经接入了 MCP 协议，启动时自动注册 MCP 服务器的所有工具。`@cyanheads/git-mcp-server` 提供了完整的 28 个 git 工具，自手写只能覆盖 3 个，且需要维护子进程管理、超时、输出截断等细节。
 
-**git-commit 自动 add -A**：编码 Agent 的典型场景——改完代码直接提交。把 add + commit 合并到一个工具调用，减少工具调用轮数。
+**双层安全模型**：MCP 服务器自身有 `GIT_BASE_DIR` 路径沙箱 + 破坏性操作确认 + 参数防注入（进程 spawn，无 shell 插值）+ MiniHarness 的安全策略再加一层审批。即使 MCP 服务器允许某个操作，用户仍可 deny。
 
-**diff 输出截断**：diff 可能很大，截断到 5000 字符并标注总长度，避免挤占上下文。
+**权限分级**：
+- 只读操作（status/diff/log/show/blame/branch 列出/remote 查看）→ `allow`，Agent 可自由调用
+- 写操作（add/commit/checkout/merge/push/pull 等）→ `ask`，用户逐次审批
+- 破坏性操作（reset/clean）→ `deny`，直接禁止
 
-**git-diff --stat 优先**：先返回 `--stat`（文件级摘要），再返回完整 diff。Agent 可以先看概览再决定是否深入。
+**`GIT_BASE_DIR` 路径沙箱**：限制所有 git 操作在指定目录树下。配合 MiniHarness 已有的 `inWorkspace()` 检查 `repoPath` 参数，双重保证不会越界。
 
 ### 实现步骤清单
 
-1. 实现 git-status 工具：`git status --porcelain` 解析为 staged/modified/untracked
-2. 实现 git-diff 工具：支持 staged 参数，先 --stat 再完整 diff，超长截断
-3. 实现 git-commit 工具：`git add -A + git commit -m "message"`，message 转义
-4. 配置安全策略：git-status/git-diff 为 allow，git-commit 为 ask
-5. 在 index.ts 注册工具，更新系统提示词
+1. 修改 `.env`，在 `MINIHARNESS_MCP_SERVERS` 中追加 `git:npx -y @cyanheads/git-mcp-server@latest|GIT_BASE_DIR=${workspace}`
+2. 在 `safety/policy.ts` 的 `DEFAULT_POLICY` 里为 28 个 git 工具分配合适权限（只读 allow、写 ask、破坏性 deny）
+3. 在 `safety/policy.ts` 的 `checkPolicy()` 中为 git 工具的 `repoPath` 参数添加路径越界检查
+4. 更新系统提示词，把 git 工具告诉 Agent
 
 ### 验收标准
 
-- [ ] `git-status` 能正确返回工作区文件状态
-- [ ] `git-diff` 能返回已暂存/未暂存的 diff
-- [ ] `git-commit` 能执行 `git add -A + git commit -m "message"`
-- [ ] 安全策略生效：git-status/git-diff 为 allow，git-commit 为 ask
+- [ ] 启动时控制台显示 `[MCP] git: 28 个工具就绪`
+- [ ] `mcp__git__git_status` 能正确返回工作区文件状态
+- [ ] `mcp__git__git_diff` 能返回已暂存/未暂存的 diff
+- [ ] `mcp__git__git_commit` 能提交变更（需要用户审批）
+- [ ] `mcp__git__git_log` 能查看提交历史
+- [ ] 安全策略生效：status/diff/log 为 allow，commit/push 为 ask，reset/clean 为 deny
+- [ ] `GIT_BASE_DIR` 外的路径被拒绝
 
 ---
 
