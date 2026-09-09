@@ -6,7 +6,7 @@
 
 <p align="center">
   <strong>从零构建属于你自己的深度 Agent 框架</strong><br>
-  <sub>一条循序渐进的学习路径，五个核心分支 + 四大进阶能力，掌握 LLM Agent 的每一层实现细节</sub>
+  <sub>一条循序渐进的学习路径，五个核心分支 + 六大进阶能力，掌握 LLM Agent 的每一层实现细节</sub>
 </p>
 
 <p align="center">
@@ -35,7 +35,7 @@
 
 MiniHarness 不是一个开箱即用的 SDK，而是一套**完整的 Agent 框架教学实现**。每个功能分支都是一层架构递进，你可以从最小可行版本开始，逐层叠加工具系统、上下文管理、安全权限、会话持久化，最终构建出生产级别的 Agent 基础设施。
 
-`main` 分支在五个渐进分支的基础上，进一步整合了 **MCP 工具协议**、**评测系统**、**成本可观测性**、**多模型供应商** 四大进阶能力，形成完整版本。
+`main` 分支在五个渐进分支的基础上，进一步整合了 **MCP 工具协议**、**评测系统**、**成本可观测性**、**多模型供应商**、**子代理编排**、**钩子生命周期** 六大进阶能力，形成完整版本。
 
 ---
 
@@ -65,7 +65,7 @@ main (你在这里) ── 全部功能已整合的完整版本
 
 ### main 分支进阶能力
 
-在五个渐进分支的基础上，`main` 分支新增了四大进阶模块：
+在五个渐进分支的基础上，`main` 分支新增了六大进阶模块：
 
 | 模块 | 学习重点 | 关键文件 | 你将学会 |
 |:-----|:---------|:---------|:---------|
@@ -73,8 +73,10 @@ main (你在这里) ── 全部功能已整合的完整版本
 | **评测系统** | Agent 质量基准测试 | [tasks.ts](file:///g:/3_LLM_AppDev/0_Resume_Projects/MiniHarness/src/eval/tasks.ts) · [runner.ts](file:///g:/3_LLM_AppDev/0_Resume_Projects/MiniHarness/src/eval/runner.ts) · [report.ts](file:///g:/3_LLM_AppDev/0_Resume_Projects/MiniHarness/src/eval/report.ts) | 任务定义与验证机制、三种校验模式（contain/regex/script）、基线对比与回归检测 |
 | **成本可观测性** | Token 与费用追踪 | [collector.ts](file:///g:/3_LLM_AppDev/0_Resume_Projects/MiniHarness/src/telemetry/collector.ts) · [pricing.ts](file:///g:/3_LLM_AppDev/0_Resume_Projects/MiniHarness/src/telemetry/pricing.ts) · [format.ts](file:///g:/3_LLM_AppDev/0_Resume_Projects/MiniHarness/src/telemetry/format.ts) | 逐轮指标采集、多模型定价表、USD 成本估算、人可读报告格式化 |
 | **多模型供应商** | Provider 抽象与工厂 | [factory.ts](file:///g:/3_LLM_AppDev/0_Resume_Projects/MiniHarness/src/provider/factory.ts) · [ollama.ts](file:///g:/3_LLM_AppDev/0_Resume_Projects/MiniHarness/src/provider/ollama.ts) · [types.ts](file:///g:/3_LLM_AppDev/0_Resume_Projects/MiniHarness/src/provider/types.ts) | Provider 接口设计、工厂模式切换、Ollama 本地模型接入 |
+| **子代理编排** | 任务分解与并行执行 | [decomposer.ts](file:///g:/3_LLM_AppDev/0_Resume_Projects/MiniHarness/src/agent/subagent/decomposer.ts) · [orchestrator.ts](file:///g:/3_LLM_AppDev/0_Resume_Projects/MiniHarness/src/agent/subagent/orchestrator.ts) · [runner.ts](file:///g:/3_LLM_AppDev/0_Resume_Projects/MiniHarness/src/agent/subagent/runner.ts) | LLM 驱动的任务分解、拓扑排序依赖管理、分层并行执行、结果汇总聚合 |
+| **钩子生命周期** | 工具执行拦截与增强 | [types.ts](file:///g:/3_LLM_AppDev/0_Resume_Projects/MiniHarness/src/hooks/types.ts) · [registry.ts](file:///g:/3_LLM_AppDev/0_Resume_Projects/MiniHarness/src/hooks/registry.ts) | Pre/Post 钩子注册机制、四种 HookAction（continue/deny/modify/append）、审计日志钩子 |
 
-> **💡 学习建议**：从 `feat/minimal-streaming-agent` 开始，按顺序切换分支，阅读每个分支的代码变更差异，理解每一层设计决策的动机。然后再回到 `main` 分支研究四大进阶能力。
+> **💡 学习建议**：从 `feat/minimal-streaming-agent` 开始，按顺序切换分支，阅读每个分支的代码变更差异，理解每一层设计决策的动机。然后再回到 `main` 分支研究六大进阶能力。
 
 ---
 
@@ -133,6 +135,24 @@ main (你在这里) ── 全部功能已整合的完整版本
 - Ollama 供应商复用 OpenAI 兼容协议，本地模型零配置接入（默认 `localhost:11434`）
 - 同一套 Agent 逻辑无缝运行在云端 API 或本地模型上
 
+### 10. 子代理编排
+- LLM 驱动的任务分解：将复杂任务拆分为 2-8 个独立可验证的子任务
+- 拓扑排序依赖管理：自动按依赖关系分层，检测并拒绝循环依赖
+- 分层并行执行：同层子任务多 Worker 并发（默认 3 并发），跨层串行
+- 工具权限隔离：每个子任务可指定 `tools` 白名单，限制可访问的工具集
+- 结果汇总聚合：所有子任务完成后，调用 LLM 生成统一的最终答案
+- `pnpm dev subagent "任务"` 或 REPL 中 `:sub <任务>` 一键触发
+
+### 11. 钩子生命周期
+- **Pre-Tool 钩子**：工具执行前拦截，支持四种动作：
+  - `continue` — 放行执行
+  - `deny` — 阻止执行并返回原因
+  - `modify` — 修改工具参数（patch 合并）
+  - `append` — 向工具结果追加额外输出
+- **Post-Tool 钩子**：工具执行后回调，用于审计、日志、副作用处理
+- 内置审计钩子：每次工具调用后输出 `[audit]` 时间戳、工具名、状态、摘要
+- 钩子注册返回取消订阅函数，支持动态注册/注销
+
 ---
 
 ## 🏗️ 架构设计
@@ -140,11 +160,12 @@ main (你在这里) ── 全部功能已整合的完整版本
 ```
 ┌─────────────────────────────────────────────────────────────┐
 │                          CLI 入口                            │
-│  ask / chat / resume / sessions / eval  ←  [index.ts]      │
+│  ask / chat / resume / sessions / eval / subagent  ←  [index.ts] │
 └──────────────┬──────────────────────────────────────────────┘
                │
    ┌───────────▼───────────┐
    │   CLI 交互层 [cli/]    │  repl.ts · ui.ts (spinner/markdown)
+   │  :sub / :reset / :help │
    └───────────┬───────────┘
                │
 ┌──────────────▼──────────────────────────────────────────────┐
@@ -173,6 +194,11 @@ main (你在这里) ── 全部功能已整合的完整版本
 │     │ 安全策略 + 人工审批   │  policy.ts + approver.ts      │
 │     └───────────┬───────────┘                               │
 │                 │                                           │
+│     ┌───────────▼───────────┐                               │
+│     │  钩子生命周期 [hooks/] │  Pre → deny/modify/append    │
+│     │  Pre/Post Tool Hooks  │  Post → 审计/日志             │
+│     └───────────┬───────────┘                               │
+│                 │                                           │
 │     ┌───────────▼───────────────────────┐                   │
 │     │     工具执行 (registry)           │                   │
 │     │  ┌────────────┐  ┌──────────────┐ │                   │
@@ -182,20 +208,19 @@ main (你在这里) ── 全部功能已整合的完整版本
 │     └──────────────────────────┼─────────┘                   │
 └────────────────────────────────┼─────────────────────────────┘
                                  │
-                    ┌────────────▼────────────┐
-                    │  MCP 客户端 [mcp/]      │
-                    │  JSON-RPC 子进程通信    │
-                    │  fs · memory · fetch... │
-                    └─────────────────────────┘
-                                 │
-                    ┌────────────▼────────────┐
-                    │   会话持久化 (store)    │  .anvil/sessions/*.json
-                    └─────────────────────────┘
-                                 │
-                    ┌────────────▼────────────┐
-                    │   评测系统 [eval/]      │  .anvil/eval-baseline.json
-                    │   6 任务 · 基线对比     │
-                    └─────────────────────────┘
+              ┌──────────────────┼──────────────────┐
+              │                  │                  │
+   ┌──────────▼──────────┐  ┌────▼────────────┐  ┌─▼───────────────────┐
+   │  MCP 客户端 [mcp/]   │  │ 会话持久化      │  │  评测系统 [eval/]    │
+   │  JSON-RPC 子进程     │  │ .anvil/sessions │  │  .anvil/eval-baseline│
+   │  fs · memory · fetch │  └─────────────────┘  └─────────────────────┘
+   └──────────────────────┘
+              │
+   ┌──────────▼──────────────────────────────┐
+   │  子代理编排 [agent/subagent/]           │
+   │  decompose → topoSort → runLayer       │
+   │  → summarize → finalAnswer             │
+   └─────────────────────────────────────────┘
 ```
 
 ---
@@ -276,7 +301,7 @@ pnpm dev
 
 ## 💻 命令使用
 
-MiniHarness 提供五种交互模式，覆盖从单轮任务到评测基准的各种场景：
+MiniHarness 提供六种交互模式，覆盖从单轮任务到评测基准的各种场景：
 
 ### 1. 单轮任务 (`ask`)
 
@@ -329,6 +354,7 @@ pnpm dev chat 550e8400-e29b-41d4-a716-446655440000
 | `:exit` / `:quit` | 退出聊天，自动保存 |
 | `:reset` | 结束当前会话，创建全新会话 |
 | `:sessions` | 列出所有历史会话 |
+| `:sub <任务>` | 子代理模式：自动分解任务并并行执行 |
 
 ### 3. 断点续跑 (`resume`)
 
@@ -351,7 +377,40 @@ pnpm dev sessions
 # a1b2c3d4  [running] 读取 package.json 并...  (2026/8/29 15:02:11)
 ```
 
-### 5. 评测基准 (`eval`)
+### 5. 子代理模式 (`subagent`)
+
+将复杂任务自动分解为子任务，按依赖关系分层并行执行后汇总结果。
+
+```bash
+# 通过 CLI 直接调用
+pnpm dev subagent "读取 src 目录下所有模块，分析每个模块的职责并生成架构总结"
+
+# 或在 REPL 中使用
+:sub 分析项目依赖关系，列出所有外部依赖及其用途
+```
+
+运行示例：
+```
+🔍 正在分解任务...
+
+📋 分解为 4 个子任务
+   计划: 1. 列出 src 下所有目录  2. 读取每个模块入口文件 ...
+
+  ▶ [t1] 开始: 列出 src 目录结构
+  ▶ [t2] 开始: 读取 package.json 依赖
+  ✓ [t1] 列出 src 目录结构 (1230ms)
+  ✓ [t2] 读取 package.json 依赖 (890ms)
+  ▶ [t3] 开始: 分析每个模块职责
+  ✓ [t3] 分析每个模块职责 (3450ms)
+  ▶ [t4] 开始: 生成架构总结
+  ✓ [t4] 生成架构总结 (2100ms)
+
+✓ 成功: 4  失败: 0
+
+[最终答案] 项目分为 8 个核心模块...
+```
+
+### 6. 评测基准 (`eval`)
 
 运行内置评测任务，验证 Agent 能力并生成报告。
 
@@ -422,14 +481,20 @@ pnpm test:telemetry    # 成本可观测性测试 (~19 用例)
 ```
 MiniHarness/
 ├── src/
-│   ├── index.ts                 # CLI 入口：ask / chat / resume / sessions / eval
+│   ├── index.ts                 # CLI 入口：ask / chat / resume / sessions / eval / subagent
 │   ├── config.ts                # Zod 环境变量校验 + MCP 服务器解析
 │   ├── agent/
-│   │   ├── loop.ts              # Agent 主循环（10 轮工具调用 + 事件系统）
+│   │   ├── loop.ts              # Agent 主循环（10 轮工具调用 + 事件系统 + 钩子集成）
 │   │   ├── tokens.ts            # gpt-tokenizer 精确计数
 │   │   ├── context.ts           # 上下文截断 + 工具输出裁剪
 │   │   ├── summarizer.ts        # LLM 历史摘要生成
 │   │   ├── system-prompt.ts     # System Prompt 模板
+│   │   ├── subagent/
+│   │   │   ├── types.ts         # SubTask / SubTaskResult / DecompositionResult
+│   │   │   ├── decomposer.ts    # LLM 驱动的任务分解
+│   │   │   ├── orchestrator.ts  # 拓扑排序 + 分层并行执行 + 结果汇总
+│   │   │   ├── runner.ts        # runSubAgentMode 入口（分解→编排→汇总）
+│   │   │   └── index.ts
 │   │   └── index.ts             # 模块 barrel re-export
 │   ├── provider/
 │   │   ├── types.ts             # Provider 接口 + ChatMessage/StreamEvent 类型
@@ -466,6 +531,10 @@ MiniHarness/
 │   │   ├── collector.ts         # TelemetryCollector 逐轮采集器
 │   │   ├── pricing.ts           # 多模型定价表 + 成本估算
 │   │   ├── format.ts            # 人可读报告格式化
+│   │   └── index.ts
+│   ├── hooks/
+│   │   ├── types.ts             # HookAction / PreToolUseHook / PostToolUseHook
+│   │   ├── registry.ts          # onPreToolUse / onPostToolUse / runPreToolUse / runPostToolUse
 │   │   └── index.ts
 │   └── cli/
 │       ├── repl.ts              # 交互式 REPL（readline + colon 命令）
@@ -529,6 +598,12 @@ MCP 协议的设计本身就基于 stdio 传输——服务器读 stdin、写 st
 
 ### 为什么评测验证支持 script 模式？
 `contain` 和 `regex` 只能检查答案文本，但有些任务的正确性需要**实际执行验证**——比如"src/config.ts 有多少行"，答案是否正确取决于真实行数。`script` 模式运行自定义 Node 脚本，能处理任意复杂的验证逻辑。参见 [runner.ts](file:///g:/3_LLM_AppDev/0_Resume_Projects/MiniHarness/src/eval/runner.ts)。
+
+### 为什么子代理用拓扑排序分层而不是直接全并行？
+全并行假设所有子任务互相独立，但真实场景中子任务往往有依赖——先读文件才能分析，先分析才能总结。拓扑排序自动将任务按依赖关系分层：同层内并行执行，跨层串行传递结果。这样既最大化并行度，又保证依赖顺序正确。如果出现循环依赖，立即报错而非死锁。参见 [orchestrator.ts](file:///g:/3_LLM_AppDev/0_Resume_Projects/MiniHarness/src/agent/subagent/orchestrator.ts)。
+
+### 为什么钩子系统的 Pre-Tool 返回支持 append 而不仅是否决/放行？
+单纯的 deny/continue 只能做拦截，但很多场景需要在工具执行后**附加信息**——比如在 `write-file` 后追加文件行数统计，或在 `read-file` 后追加编码检测。`append` 动作让 Pre-Tool 钩子可以声明"我要附加内容"，但附加的文本在工具执行完毕后才注入到结果中，这样 Agent 看到的是工具输出 + 附加信息的合并体。参见 [loop.ts](file:///g:/3_LLM_AppDev/0_Resume_Projects/MiniHarness/src/agent/loop.ts)。
 
 ---
 
