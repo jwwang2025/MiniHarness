@@ -10,10 +10,9 @@ export interface MCPServerConfig {
 }
 
 // 单个服务器格式：<名字>:<启动命令> [参数...] [|KEY=VAL KEY=VAL...]
-// 竖线后为透传给服务器的环境变量（如 API key、存储路径）；${workspace} 会替换为当前工作目录
-function parseMCPServers(raw?: string): MCPServerConfig[] {
+// 竖线后为透传给服务器的环境变量（如 API key、存储路径）；${workspace} 会替换为指定工作目录
+export function parseMCPServers(raw: string | undefined, workspace: string): MCPServerConfig[] {
   if (!raw) return [];
-  const workspace = process.cwd();
   const expand = (s: string) => s.replaceAll("${workspace}", workspace);
   return raw.split(";").filter(Boolean).map((s) => {
     const [cmdPart, envPart] = s.split("|");
@@ -42,4 +41,4 @@ export const apiKey = env.MINIHARNESS_API_KEY ?? "";
 export const baseUrl = env.MINIHARNESS_BASE_URL;
 export const model = env.MINIHARNESS_MODEL;
 export const provider = env.MINIHARNESS_PROVIDER;
-export const mcpServers = parseMCPServers(env.MINIHARNESS_MCP_SERVERS);
+export const mcpServersRaw = env.MINIHARNESS_MCP_SERVERS;
