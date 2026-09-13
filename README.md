@@ -55,26 +55,21 @@ main (你在这里) ── 全部功能已整合的完整版本
 
 ### 分支详解
 
-| 分支 | 学习重点 | 关键文件 | 你将学会 |
-|:-----|:---------|:---------|:---------|
-| **feat/minimal-streaming-agent** | 流式 API & SSE 解析 | [openai.ts](file:///g:/3_LLM_AppDev/0_Resume_Projects/MiniHarness/src/provider/openai.ts) | OpenAI 兼容接口调用、SSE 流解析、AsyncIterable |
-| **feat/tool-system** | 工具抽象 & 注册表模式 | [registry.ts](file:///g:/3_LLM_AppDev/0_Resume_Projects/MiniHarness/src/tools/registry.ts) · [file-tools.ts](file:///g:/3_LLM_AppDev/0_Resume_Projects/MiniHarness/src/tools/file-tools.ts) · [types.ts](file:///g:/3_LLM_AppDev/0_Resume_Projects/MiniHarness/src/tools/types.ts) | 工具注册机制、Zod 参数校验、Agent 多轮工具调用循环 |
-| **feat/context-management** | Token 预算 & 智能摘要 | [tokens.ts](file:///g:/3_LLM_AppDev/0_Resume_Projects/MiniHarness/src/agent/tokens.ts) · [context.ts](file:///g:/3_LLM_AppDev/0_Resume_Projects/MiniHarness/src/agent/context.ts) · [summarizer.ts](file:///g:/3_LLM_AppDev/0_Resume_Projects/MiniHarness/src/agent/summarizer.ts) | gpt-tokenizer 精确计费、上下文滑动窗口、LLM 历史摘要压缩 |
-| **feat/safety-permissions** | 沙箱边界 & 审批流 | [policy.ts](file:///g:/3_LLM_AppDev/0_Resume_Projects/MiniHarness/src/safety/policy.ts) · [approver.ts](file:///g:/3_LLM_AppDev/0_Resume_Projects/MiniHarness/src/safety/approver.ts) · [types.ts](file:///g:/3_LLM_AppDev/0_Resume_Projects/MiniHarness/src/safety/types.ts) | 工作区路径越界检测、危险命令正则匹配、三级权限策略（allow/ask/deny）、交互式审批缓存 |
-| **feat/session-persistence** | 状态持久化 & 断点续跑 | [store.ts](file:///g:/3_LLM_AppDev/0_Resume_Projects/MiniHarness/src/session/store.ts) · [types.ts](file:///g:/3_LLM_AppDev/0_Resume_Projects/MiniHarness/src/session/types.ts) · [index.ts](file:///g:/3_LLM_AppDev/0_Resume_Projects/MiniHarness/src/index.ts) | JSON 文件存储、UUID 会话、多轮对话恢复、中断任务续跑、CLI 交互模式 |
+前 5 个为渐进式功能分支，后 6 个为 `main` 分支新增的进阶模块：
 
-### main 分支进阶能力
-
-在五个渐进分支的基础上，`main` 分支新增了六大进阶模块：
-
-| 模块 | 学习重点 | 关键文件 | 你将学会 |
-|:-----|:---------|:---------|:---------|
-| **MCP 工具协议** | 外部工具服务器集成 | [client.ts](file:///g:/3_LLM_AppDev/0_Resume_Projects/MiniHarness/src/mcp/client.ts) · [tool-adapter.ts](file:///g:/3_LLM_AppDev/0_Resume_Projects/MiniHarness/src/mcp/tool-adapter.ts) | JSON-RPC 2.0 子进程通信、MCP 协议初始化握手、工具发现与适配、环境变量配置机制 |
-| **评测系统** | Agent 质量基准测试 | [tasks.ts](file:///g:/3_LLM_AppDev/0_Resume_Projects/MiniHarness/src/eval/tasks.ts) · [runner.ts](file:///g:/3_LLM_AppDev/0_Resume_Projects/MiniHarness/src/eval/runner.ts) · [report.ts](file:///g:/3_LLM_AppDev/0_Resume_Projects/MiniHarness/src/eval/report.ts) | 任务定义与验证机制、三种校验模式（contain/regex/script）、基线对比与回归检测 |
-| **成本可观测性** | Token 与费用追踪 | [collector.ts](file:///g:/3_LLM_AppDev/0_Resume_Projects/MiniHarness/src/telemetry/collector.ts) · [pricing.ts](file:///g:/3_LLM_AppDev/0_Resume_Projects/MiniHarness/src/telemetry/pricing.ts) · [format.ts](file:///g:/3_LLM_AppDev/0_Resume_Projects/MiniHarness/src/telemetry/format.ts) | 逐轮指标采集、多模型定价表、USD 成本估算、人可读报告格式化 |
-| **多模型供应商** | Provider 抽象与工厂 | [factory.ts](file:///g:/3_LLM_AppDev/0_Resume_Projects/MiniHarness/src/provider/factory.ts) · [ollama.ts](file:///g:/3_LLM_AppDev/0_Resume_Projects/MiniHarness/src/provider/ollama.ts) · [types.ts](file:///g:/3_LLM_AppDev/0_Resume_Projects/MiniHarness/src/provider/types.ts) | Provider 接口设计、工厂模式切换、Ollama 本地模型接入 |
-| **子代理编排** | 任务分解与并行执行 | [decomposer.ts](file:///g:/3_LLM_AppDev/0_Resume_Projects/MiniHarness/src/agent/subagent/decomposer.ts) · [orchestrator.ts](file:///g:/3_LLM_AppDev/0_Resume_Projects/MiniHarness/src/agent/subagent/orchestrator.ts) · [runner.ts](file:///g:/3_LLM_AppDev/0_Resume_Projects/MiniHarness/src/agent/subagent/runner.ts) | LLM 驱动的任务分解、拓扑排序依赖管理、分层并行执行、结果汇总聚合 |
-| **钩子生命周期** | 工具执行拦截与增强 | [types.ts](file:///g:/3_LLM_AppDev/0_Resume_Projects/MiniHarness/src/hooks/types.ts) · [registry.ts](file:///g:/3_LLM_AppDev/0_Resume_Projects/MiniHarness/src/hooks/registry.ts) | Pre/Post 钩子注册机制、四种 HookAction（continue/deny/modify/append）、审计日志钩子 |
+| 分支名 | 模块名 | 学习重点 | 你将学会 |
+|:-------|:-------|:---------|:---------|
+| `feat/minimal-streaming-agent` | 最小流式 Agent | 流式 API & SSE 解析 | OpenAI 兼容接口调用、SSE 流解析、AsyncIterable |
+| `feat/tool-system` | 工具系统 | 工具抽象 & 注册表模式 | 工具注册机制、Zod 参数校验、Agent 多轮工具调用循环 |
+| `feat/context-management` | 上下文管理 | Token 预算 & 智能摘要 | gpt-tokenizer 精确计费、上下文滑动窗口、LLM 历史摘要压缩 |
+| `feat/safety-permissions` | 安全策略 | 沙箱边界 & 审批流 | 工作区路径越界检测、危险命令正则匹配、三级权限策略（allow/ask/deny）、交互式审批缓存 |
+| `feat/session-persistence` | 会话持久化 | 状态持久化 & 断点续跑 | JSON 文件存储、UUID 会话、多轮对话恢复、中断任务续跑、CLI 交互模式 |
+| `feat/mcp-support` | MCP 工具协议 | 外部工具服务器集成 | JSON-RPC 2.0 子进程通信、MCP 协议初始化握手、工具发现与适配、环境变量配置机制 |
+| `feat/eval-framework` | 评测系统 | Agent 质量基准测试 | 任务定义与验证机制、三种校验模式（contain/regex/script）、基线对比与回归检测 |
+| `feat/cost-observability` | 成本可观测性 | Token 与费用追踪 | 逐轮指标采集、多模型定价表、USD 成本估算、人可读报告格式化 |
+| `feat/multi-provider` | 多模型供应商 | Provider 抽象与工厂 | Provider 接口设计、工厂模式切换、Ollama 本地模型接入 |
+| `feat/subagent-orchestration` | 子代理编排 | 任务分解与并行执行 | LLM 驱动的任务分解、拓扑排序依赖管理、分层并行执行、结果汇总聚合 |
+| `feat/hook-lifecycle` | 钩子生命周期 | 工具执行拦截与增强 | Pre/Post 钩子注册机制、四种 HookAction（continue/deny/modify/append）、审计日志钩子 |
 
 > **💡 学习建议**：从 `feat/minimal-streaming-agent` 开始，按顺序切换分支，阅读每个分支的代码变更差异，理解每一层设计决策的动机。然后再回到 `main` 分支研究六大进阶能力。
 
