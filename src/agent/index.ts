@@ -4,4 +4,5 @@ export type { ContextConfig } from "./context.ts";
 export { DEFAULT_CTX, clipToolOutput, truncate } from "./context.ts";
 export { summarizeMessages } from "./summarizer.ts";
 export { SYSTEM_PROMPT } from "./system-prompt.ts";
+export { loadProjectMemory, withMemory } from "./memory.ts";
 export { estimateTokens, estimateMessagesTokens } from "./tokens.ts";

@@ -7,6 +7,7 @@ import { getTool, toOpenAITools, type ToolContext } from "../tools/index.ts";
 import { truncate, DEFAULT_CTX, clipToolOutput } from "./context.ts";
 import { summarizeMessages } from "./summarizer.ts";
 import { SYSTEM_PROMPT } from "./system-prompt.ts";
+import { loadProjectMemory, withMemory } from "./memory.ts";
 import { estimateMessagesTokens } from "./tokens.ts";
 /* feat/safety-permission
 *----------------------------------------------------------------
@@ -80,7 +81,9 @@ export async function runAgent(
 
   const isResume = opts.session != null && task === "";
 
-  const sysMsg: ChatMessage = { role: "system", content: SYSTEM_PROMPT };
+  const memory = await loadProjectMemory(ctx.workspace);
+  const systemPrompt = withMemory(SYSTEM_PROMPT, memory);
+  const sysMsg: ChatMessage = { role: "system", content: systemPrompt };
   let messages: ChatMessage[];
   if (isResume) {
     // 断点续跑：从 session 恢复消息，确保 system 消息存在
@@ -115,6 +118,7 @@ export async function runAgent(
       messages,
       DEFAULT_CTX,
       (old) => summarizeMessages(provider, old, signal),
+      systemPrompt,
     );
     if (compressed) {
       messages = truncated;

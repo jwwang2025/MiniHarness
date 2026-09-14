@@ -22,15 +22,20 @@ export function clipToolOutput(text: string, maxLines = 200): string {
 export async function truncate(
     messages: ChatMessage[],
     cfg: ContextConfig = DEFAULT_CTX,
-    summarize?:(oldMessages: ChatMessage[])=>Promise<string>
+    summarize?:(oldMessages: ChatMessage[])=>Promise<string>,
+    systemPrompt?: string,
 ):Promise<{ messages: ChatMessage[], compressed: boolean }> {
     const budget = cfg.maxTokens - cfg.reservedTokens;
     const used = estimateMessagesTokens(messages);
     if (used <= budget) 
         return { messages, compressed: false };
 
-    const sys = messages[0]?.role === "system" ? [messages[0]] : [];
-    const rest = sys.length ? messages.slice(1) : messages;
+    // 压缩后重注入 system prompt（含 AGENTS.md）
+    const sysMsg = systemPrompt
+        ? { role: "system" as const, content: systemPrompt }
+        : messages[0]?.role === "system" ? messages[0] : null;
+    const sys = sysMsg ? [sysMsg] : [];
+    const rest = sysMsg && messages[0]?.role === "system" ? messages.slice(1) : messages;
 
     const kept: ChatMessage[] = [];
     let keptTokens = estimateMessagesTokens(sys);
