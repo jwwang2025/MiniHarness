@@ -310,26 +310,6 @@ pnpm dev ask "分析项目 src 目录结构，列出所有模块文件及其职�
 pnpm dev ask "读取 src/index.ts，在开头添加版本注释，然后创建 .gitignore 文件"
 ```
 
-运行中你会看到完整的 Agent 执行轨迹：
-```
-[round 1]
-  → list-dir {"path":"."}
-  ✓ list-dir → 📁 src/  📄 package.json  ...
-[round 2]
-  → read-file {"path":"src/index.ts"}
-  ✓ read-file → 1  import { registerFileTools } ...
-  [context] 2847 → 2103 tokens   ← 上下文被智能压缩
-[round 3]
-⚠️  即将执行: write-file {"path":"src/index.ts","content":"// ===== MiniHarness v1.0 ===== ..."}
-允许? [y=是 / n=否 / a=总是允许此模式] y     ← 安全审批流程
-  ✓ write-file → 已写入 src/index.ts
-
-所有改动完成：在 src/index.ts 开头添加了版本注释...
-[session] 550e8400-e29b-41d4-a716-446655440000   ← 会话 ID 用于恢复
-
-⏱  耗时: 12.3s · 轮数: 3 · token: 5421 · 成本: $0.0015   ← 成本报告
-```
-
 ### 2. 多轮对话 (`chat`)
 
 适合需要上下文连续的复杂任务，自动持久化每一步。
@@ -384,27 +364,6 @@ pnpm dev subagent "读取 src 目录下所有模块，分析每个模块的职�
 :sub 分析项目依赖关系，列出所有外部依赖及其用途
 ```
 
-运行示例：
-```
-🔍 正在分解任务...
-
-📋 分解为 4 个子任务
-   计划: 1. 列出 src 下所有目录  2. 读取每个模块入口文件 ...
-
-  ▶ [t1] 开始: 列出 src 目录结构
-  ▶ [t2] 开始: 读取 package.json 依赖
-  ✓ [t1] 列出 src 目录结构 (1230ms)
-  ✓ [t2] 读取 package.json 依赖 (890ms)
-  ▶ [t3] 开始: 分析每个模块职责
-  ✓ [t3] 分析每个模块职责 (3450ms)
-  ▶ [t4] 开始: 生成架构总结
-  ✓ [t4] 生成架构总结 (2100ms)
-
-✓ 成功: 4  失败: 0
-
-[最终答案] 项目分为 8 个核心模块...
-```
-
 ### 6. 评测基准 (`eval`)
 
 运行内置评测任务，验证 Agent 能力并生成报告。
@@ -416,28 +375,6 @@ pnpm dev eval
 # 运行并将当前结果保存为新基线
 pnpm dev eval --save
 ```
-
-输出示例：
-```
-=== Eval Report ===
-通过率: 5/6 (83%)
-平均轮数: 2.2
-总 token: 12450
-总成本: $0.0035
-耗时: 45.2 s
-
-=== 基线对比 ===
-基线通过率: 4/6 (67%)
-回归: 0  改进: 1
-
-=== 任务详情 ===
-✓ read-package-name    1轮  520tok  $0.0001
-✓ list-src-dir         2轮  890tok  $0.0003
-✗ count-lines-config   3轮  2100tok $0.0006 (超时)
-...
-```
-
----
 
 ## 🧪 测试覆盖
 
@@ -486,38 +423,6 @@ pnpm test:telemetry    # 成本可观测性测试 (~19 用例)
 | **存储** | JSON 文件 (`fs/promises`) | `.anvil/sessions/` 目录，零数据库 |
 | **LLM 接口** | OpenAI 兼容 Chat Completions | 默认 DeepSeek，可切换 Ollama / GPT / Qwen 等 |
 | **工具协议** | [MCP](https://modelcontextprotocol.io/) | JSON-RPC 2.0 子进程通信，接入外部工具服务器 |
-
----
-
-## 🧠 设计决策记录
-
-### 为什么上下文压缩用 summarize 而不是丢弃？
-丢弃旧消息会导致 Agent 忘记早期做出的决策和已完成的文件写入。调用 LLM 生成 200 字摘要虽然有少量 token 开销，但保留了**决策记忆**，在长任务（改 10+ 个文件）中正确性显著提升。参见 [context.ts](file:///g:/3_LLM_AppDev/0_Resume_Projects/MiniHarness/src/agent/context.ts#L22-L52)。
-
-### 为什么安全策略做三层（allow/ask/deny）而不是简单 ask？
-- `deny`：路径越界、`rm -rf` 这类操作**绝不能放行**，即便用户手滑也会被硬拦截
-- `allow`：只读操作（读文件、列目录）不需要每次都问，减少交互摩擦
-- `ask`：写文件、运行命令属于副作用操作，让用户确认
-
-参见 [policy.ts](file:///g:/3_LLM_AppDev/0_Resume_Projects/MiniHarness/src/safety/policy.ts#L39-L64)。
-
-### 为什么会话存储用 JSON 文件而不是 SQLite？
-教学项目的核心原则是**减少隐藏复杂度**。JSON 文件肉眼可读、编辑器直接打开就能调试 Agent 状态，`cat .anvil/sessions/*.json` 就能看到完整对话历史，更适合理解"持久化到底存了什么"。
-
-### 为什么 MCP 客户端用子进程而不是 HTTP？
-MCP 协议的设计本身就基于 stdio 传输——服务器读 stdin、写 stdout，天然适合子进程模型。这样做的好处是：零网络端口占用、进程隔离崩溃不影响主进程、`npx -y` 免安装启动任意服务器。参见 [client.ts](file:///g:/3_LLM_AppDev/0_Resume_Projects/MiniHarness/src/mcp/client.ts)。
-
-### 为什么遥测系统逐轮采集而不是只统计总数？
-只有逐轮采集才能回答"哪一轮最慢""哪个工具拖了后腿"这类问题。`formatMetrics` 输出最慢 Top 3 工具调用和最慢 Top 3 轮次，让性能瓶颈一目了然。总数字只能告诉你"花了多少"，逐轮数据才能告诉你"为什么花这么多"。参见 [collector.ts](file:///g:/3_LLM_AppDev/0_Resume_Projects/MiniHarness/src/telemetry/collector.ts)。
-
-### 为什么评测验证支持 script 模式？
-`contain` 和 `regex` 只能检查答案文本，但有些任务的正确性需要**实际执行验证**——比如"src/config.ts 有多少行"，答案是否正确取决于真实行数。`script` 模式运行自定义 Node 脚本，能处理任意复杂的验证逻辑。参见 [runner.ts](file:///g:/3_LLM_AppDev/0_Resume_Projects/MiniHarness/src/eval/runner.ts)。
-
-### 为什么子代理用拓扑排序分层而不是直接全并行？
-全并行假设所有子任务互相独立，但真实场景中子任务往往有依赖——先读文件才能分析，先分析才能总结。拓扑排序自动将任务按依赖关系分层：同层内并行执行，跨层串行传递结果。这样既最大化并行度，又保证依赖顺序正确。如果出现循环依赖，立即报错而非死锁。参见 [orchestrator.ts](file:///g:/3_LLM_AppDev/0_Resume_Projects/MiniHarness/src/agent/subagent/orchestrator.ts)。
-
-### 为什么钩子系统的 Pre-Tool 返回支持 append 而不仅是否决/放行？
-单纯的 deny/continue 只能做拦截，但很多场景需要在工具执行后**附加信息**——比如在 `write-file` 后追加文件行数统计，或在 `read-file` 后追加编码检测。`append` 动作让 Pre-Tool 钩子可以声明"我要附加内容"，但附加的文本在工具执行完毕后才注入到结果中，这样 Agent 看到的是工具输出 + 附加信息的合并体。参见 [loop.ts](file:///g:/3_LLM_AppDev/0_Resume_Projects/MiniHarness/src/agent/loop.ts)。
 
 ---
 
