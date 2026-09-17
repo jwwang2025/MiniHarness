@@ -6,8 +6,9 @@
 
 <p align="center">
   <strong>从零构建属于你自己的深度 Agent 框架</strong><br>
-  <sub>一条循序渐进的学习路径，五个核心分支 + 六大进阶能力，掌握 LLM Agent 的每一层实现细节</sub>
+  <sub>一条循序渐进的学习路径，十一个核心分支 + 进阶能力，掌握 LLM Agent 的每一层实现细节</sub>
 </p>
+
 
 <p align="center">
   <a href="#学习路线图">学习路线图</a> ·
@@ -33,29 +34,17 @@
 
 > **通过循序渐进的各个分支的学习，实现一个属于自己的有深度的 Agent 项目。**
 
-MiniHarness 不是一个开箱即用的 SDK，而是一套**完整的 Agent 框架教学实现**。每个功能分支都是一层架构递进，你可以从最小可行版本开始，逐层叠加工具系统、上下文管理、安全权限、会话持久化，最终构建出生产级别的 Agent 基础设施。
-
-`main` 分支在五个渐进分支的基础上，进一步整合了 **MCP 工具协议**、**评测系统**、**成本可观测性**、**多模型供应商**、**子代理编排**、**钩子生命周期** 六大进阶能力，形成完整版本。
+MiniHarness 不是一个开箱即用的 SDK，而是一套**完整的 Agent 框架教学实现**。每个功能分支都是一层架构递进，你可以从最小可行版本开始，逐层叠加工具系统、上下文管理、安全权限、会话持久化、MCP 工具协议**、**评测系统**、**成本可观测性**、**多模型供应商**、**子代理编排**、**钩子生命周期，最终构建出生产级别的 Agent 基础设施。
 
 ---
 
+<a id="学习路线图"></a>
+
 ## 🗺️ 学习路线图
 
-本项目通过 **5 个渐进式功能分支** 搭建学习路径，每个分支都在前一版本的基础上新增一个核心能力模块：
-
-```
-main (你在这里) ── 全部功能已整合的完整版本
-  │
-  ├─ feat/session-persistence   ← 会话持久化 & 断点续跑
-  │   └─ feat/safety-permissions  ← 安全策略 & 人工审批
-  │       └─ feat/context-management  ← 上下文压缩 & Token 管理
-  │           └─ feat/tool-system  ← 工具注册 & 文件操作
-  │               └─ feat/minimal-streaming-agent  ← 最小流式 Agent
-```
+本项目通过 **11 个渐进式功能分支** 搭建学习路径，每个分支都在前一版本的基础上新增一个核心能力模块。
 
 ### 分支详解
-
-前 5 个为渐进式功能分支，后 6 个为 `main` 分支新增的进阶模块：
 
 | 分支名 | 模块名 | 学习重点 | 你将学会 |
 |:-------|:-------|:---------|:---------|
@@ -71,9 +60,11 @@ main (你在这里) ── 全部功能已整合的完整版本
 | `feat/subagent-orchestration` | 子代理编排 | 任务分解与并行执行 | LLM 驱动的任务分解、拓扑排序依赖管理、分层并行执行、结果汇总聚合 |
 | `feat/hook-lifecycle` | 钩子生命周期 | 工具执行拦截与增强 | Pre/Post 钩子注册机制、四种 HookAction（continue/deny/modify/append）、审计日志钩子 |
 
-> **💡 学习建议**：从 `feat/minimal-streaming-agent` 开始，按顺序切换分支，阅读每个分支的代码变更差异，理解每一层设计决策的动机。然后再回到 `main` 分支研究六大进阶能力。
+> **💡 学习建议**：从 `feat/minimal-streaming-agent` 开始，按顺序切换分支，阅读每个分支的代码变更差异，理解每一层设计决策的动机。然后再回到 `main` 分支研究全部进阶能力。
 
 ---
+
+<a id="核心特性"></a>
 
 ## ✨ 核心特性
 
@@ -150,6 +141,8 @@ main (你在这里) ── 全部功能已整合的完整版本
 
 ---
 
+<a id="架构设计"></a>
+
 ## 🏗️ 架构设计
 
 ```
@@ -219,6 +212,8 @@ main (你在这里) ── 全部功能已整合的完整版本
 ```
 
 ---
+
+<a id="快速开始"></a>
 
 ## 🚀 快速开始
 
@@ -293,6 +288,8 @@ pnpm dev
 ```
 
 ---
+
+<a id="命令使用"></a>
 
 ## 💻 命令使用
 
@@ -376,6 +373,8 @@ pnpm dev eval
 pnpm dev eval --save
 ```
 
+<a id="测试覆盖"></a>
+
 ## 🧪 测试覆盖
 
 项目采用**零依赖极简测试框架**，纯 TypeScript 编写，所有测试均基于真实文件系统而非 mock，保证可信度。
@@ -394,17 +393,6 @@ pnpm test:telemetry    # 成本可观测性测试 (~19 用例)
 ```
 
 > **注意**：`test:all` 脚本目前仅运行 `test` 和 `test:context`，如需运行全部测试请逐个执行或手动串联。
-
-### 测试清单
-
-| 测试文件 | 覆盖模块 | 用例数 | 特点 |
-|:---------|:---------|:-------|:-----|
-| [tool-system.test.ts](file:///g:/3_LLM_AppDev/0_Resume_Projects/MiniHarness/test/tool-system.test.ts) | 文件工具 + 注册表 | 15 | 真实临时目录，覆盖写入/读取/列目录/参数校验 |
-| [context-management.test.ts](file:///g:/3_LLM_AppDev/0_Resume_Projects/MiniHarness/test/context-management.test.ts) | Token 估算 + 截断 + 裁剪 | 18 | 边界条件极严，验证压缩后 token 数、摘要插入位置 |
-| [truncate.test.ts](file:///g:/3_LLM_AppDev/0_Resume_Projects/MiniHarness/test/truncate.test.ts) | 真实场景压缩测评 | 端到端 | 构造 7 轮真实 Agent 对话，真实调用 LLM 生成摘要再送回模型验证 |
-| [safety-permission.test.ts](file:///g:/3_LLM_AppDev/0_Resume_Projects/MiniHarness/test/safety-permission.test.ts) | 安全策略 + 审批 | 36 | spawn 子进程测试交互式 stdin，验证路径越界/危险模式/审批缓存 |
-| [session-persistence.test.ts](file:///g:/3_LLM_AppDev/0_Resume_Projects/MiniHarness/test/session-persistence.test.ts) | 会话生命周期 | 23 | 切换 cwd 到临时目录，验证创建→保存→加载→列表→删除完整流程 |
-| [cost-observability.test.ts](file:///g:/3_LLM_AppDev/0_Resume_Projects/MiniHarness/test/cost-observability.test.ts) | 成本追踪 + 报告格式化 | 19 | 定价表校验、逐轮指标采集、真实计时器、条件性真实 API 端到端验证 |
 
 ---
 
