@@ -6,8 +6,9 @@
 
 <p align="center">
   <strong>从零构建属于你自己的深度 Agent 框架</strong><br>
-  <sub>一条循序渐进的学习路径，五个核心分支 + 四大进阶能力，掌握 LLM Agent 的每一层实现细节</sub>
+  <sub>一条循序渐进的学习路径，十一个核心分支 + 进阶能力，掌握 LLM Agent 的每一层实现细节</sub>
 </p>
+
 
 <p align="center">
   <a href="#学习路线图">学习路线图</a> ·
@@ -33,50 +34,37 @@
 
 > **通过循序渐进的各个分支的学习，实现一个属于自己的有深度的 Agent 项目。**
 
-MiniHarness 不是一个开箱即用的 SDK，而是一套**完整的 Agent 框架教学实现**。每个功能分支都是一层架构递进，你可以从最小可行版本开始，逐层叠加工具系统、上下文管理、安全权限、会话持久化，最终构建出生产级别的 Agent 基础设施。
-
-`main` 分支在五个渐进分支的基础上，进一步整合了 **MCP 工具协议**、**评测系统**、**成本可观测性**、**多模型供应商** 四大进阶能力，形成完整版本。
+MiniHarness 不是一个开箱即用的 SDK，而是一套**完整的 Agent 框架教学实现**。每个功能分支都是一层架构递进，你可以从最小可行版本开始，逐层叠加工具系统、上下文管理、安全权限、会话持久化、MCP 工具协议、评测系统、成本可观测性、多模型供应商、子代理编排、钩子生命周期，最终构建出生产级别的 Agent 基础设施。
 
 ---
+
+<a id="学习路线图"></a>
 
 ## 🗺️ 学习路线图
 
-本项目通过 **5 个渐进式功能分支** 搭建学习路径，每个分支都在前一版本的基础上新增一个核心能力模块：
-
-```
-main (你在这里) ── 全部功能已整合的完整版本
-  │
-  ├─ feat/session-persistence   ← 会话持久化 & 断点续跑
-  │   └─ feat/safety-permissions  ← 安全策略 & 人工审批
-  │       └─ feat/context-management  ← 上下文压缩 & Token 管理
-  │           └─ feat/tool-system  ← 工具注册 & 文件操作
-  │               └─ feat/minimal-streaming-agent  ← 最小流式 Agent
-```
+本项目通过 **11 个渐进式功能分支** 搭建学习路径，每个分支都在前一版本的基础上新增一个核心能力模块。
 
 ### 分支详解
 
-| 分支 | 学习重点 | 关键文件 | 你将学会 |
-|:-----|:---------|:---------|:---------|
-| **feat/minimal-streaming-agent** | 流式 API & SSE 解析 | [openai.ts](file:///g:/3_LLM_AppDev/0_Resume_Projects/MiniHarness/src/provider/openai.ts) | OpenAI 兼容接口调用、SSE 流解析、AsyncIterable |
-| **feat/tool-system** | 工具抽象 & 注册表模式 | [registry.ts](file:///g:/3_LLM_AppDev/0_Resume_Projects/MiniHarness/src/tools/registry.ts) · [file-tools.ts](file:///g:/3_LLM_AppDev/0_Resume_Projects/MiniHarness/src/tools/file-tools.ts) · [types.ts](file:///g:/3_LLM_AppDev/0_Resume_Projects/MiniHarness/src/tools/types.ts) | 工具注册机制、Zod 参数校验、Agent 多轮工具调用循环 |
-| **feat/context-management** | Token 预算 & 智能摘要 | [tokens.ts](file:///g:/3_LLM_AppDev/0_Resume_Projects/MiniHarness/src/agent/tokens.ts) · [context.ts](file:///g:/3_LLM_AppDev/0_Resume_Projects/MiniHarness/src/agent/context.ts) · [summarizer.ts](file:///g:/3_LLM_AppDev/0_Resume_Projects/MiniHarness/src/agent/summarizer.ts) | gpt-tokenizer 精确计费、上下文滑动窗口、LLM 历史摘要压缩 |
-| **feat/safety-permissions** | 沙箱边界 & 审批流 | [policy.ts](file:///g:/3_LLM_AppDev/0_Resume_Projects/MiniHarness/src/safety/policy.ts) · [approver.ts](file:///g:/3_LLM_AppDev/0_Resume_Projects/MiniHarness/src/safety/approver.ts) · [types.ts](file:///g:/3_LLM_AppDev/0_Resume_Projects/MiniHarness/src/safety/types.ts) | 工作区路径越界检测、危险命令正则匹配、三级权限策略（allow/ask/deny）、交互式审批缓存 |
-| **feat/session-persistence** | 状态持久化 & 断点续跑 | [store.ts](file:///g:/3_LLM_AppDev/0_Resume_Projects/MiniHarness/src/session/store.ts) · [types.ts](file:///g:/3_LLM_AppDev/0_Resume_Projects/MiniHarness/src/session/types.ts) · [index.ts](file:///g:/3_LLM_AppDev/0_Resume_Projects/MiniHarness/src/index.ts) | JSON 文件存储、UUID 会话、多轮对话恢复、中断任务续跑、CLI 交互模式 |
+| 分支名 | 模块名 | 学习重点 | 你将学会 |
+|:-------|:-------|:---------|:---------|
+| `feat/minimal-streaming-agent` | 最小流式 Agent | 流式 API & SSE 解析 | OpenAI 兼容接口调用、SSE 流解析、AsyncIterable |
+| `feat/tool-system` | 工具系统 | 工具抽象 & 注册表模式 | 工具注册机制、Zod 参数校验、Agent 多轮工具调用循环 |
+| `feat/context-management` | 上下文管理 | Token 预算 & 智能摘要 | gpt-tokenizer 精确计费、上下文滑动窗口、LLM 历史摘要压缩 |
+| `feat/safety-permissions` | 安全策略 | 沙箱边界 & 审批流 | 工作区路径越界检测、危险命令正则匹配、三级权限策略（allow/ask/deny）、交互式审批缓存 |
+| `feat/session-persistence` | 会话持久化 | 状态持久化 & 断点续跑 | JSON 文件存储、UUID 会话、多轮对话恢复、中断任务续跑、CLI 交互模式 |
+| `feat/mcp-support` | MCP 工具协议 | 外部工具服务器集成 | JSON-RPC 2.0 子进程通信、MCP 协议初始化握手、工具发现与适配、环境变量配置机制 |
+| `feat/eval-framework` | 评测系统 | Agent 质量基准测试 | 任务定义与验证机制、三种校验模式（contain/regex/script）、基线对比与回归检测 |
+| `feat/cost-observability` | 成本可观测性 | Token 与费用追踪 | 逐轮指标采集、多模型定价表、USD 成本估算、人可读报告格式化 |
+| `feat/multi-provider` | 多模型供应商 | Provider 抽象与工厂 | Provider 接口设计、工厂模式切换、Ollama 本地模型接入 |
+| `feat/subagent-orchestration` | 子代理编排 | 任务分解与并行执行 | LLM 驱动的任务分解、拓扑排序依赖管理、分层并行执行、结果汇总聚合 |
+| `feat/hook-lifecycle` | 钩子生命周期 | 工具执行拦截与增强 | Pre/Post 钩子注册机制、四种 HookAction（continue/deny/modify/append）、审计日志钩子 |
 
-### main 分支进阶能力
-
-在五个渐进分支的基础上，`main` 分支新增了四大进阶模块：
-
-| 模块 | 学习重点 | 关键文件 | 你将学会 |
-|:-----|:---------|:---------|:---------|
-| **MCP 工具协议** | 外部工具服务器集成 | [client.ts](file:///g:/3_LLM_AppDev/0_Resume_Projects/MiniHarness/src/mcp/client.ts) · [tool-adapter.ts](file:///g:/3_LLM_AppDev/0_Resume_Projects/MiniHarness/src/mcp/tool-adapter.ts) | JSON-RPC 2.0 子进程通信、MCP 协议初始化握手、工具发现与适配、环境变量配置机制 |
-| **评测系统** | Agent 质量基准测试 | [tasks.ts](file:///g:/3_LLM_AppDev/0_Resume_Projects/MiniHarness/src/eval/tasks.ts) · [runner.ts](file:///g:/3_LLM_AppDev/0_Resume_Projects/MiniHarness/src/eval/runner.ts) · [report.ts](file:///g:/3_LLM_AppDev/0_Resume_Projects/MiniHarness/src/eval/report.ts) | 任务定义与验证机制、三种校验模式（contain/regex/script）、基线对比与回归检测 |
-| **成本可观测性** | Token 与费用追踪 | [collector.ts](file:///g:/3_LLM_AppDev/0_Resume_Projects/MiniHarness/src/telemetry/collector.ts) · [pricing.ts](file:///g:/3_LLM_AppDev/0_Resume_Projects/MiniHarness/src/telemetry/pricing.ts) · [format.ts](file:///g:/3_LLM_AppDev/0_Resume_Projects/MiniHarness/src/telemetry/format.ts) | 逐轮指标采集、多模型定价表、USD 成本估算、人可读报告格式化 |
-| **多模型供应商** | Provider 抽象与工厂 | [factory.ts](file:///g:/3_LLM_AppDev/0_Resume_Projects/MiniHarness/src/provider/factory.ts) · [ollama.ts](file:///g:/3_LLM_AppDev/0_Resume_Projects/MiniHarness/src/provider/ollama.ts) · [types.ts](file:///g:/3_LLM_AppDev/0_Resume_Projects/MiniHarness/src/provider/types.ts) | Provider 接口设计、工厂模式切换、Ollama 本地模型接入 |
-
-> **💡 学习建议**：从 `feat/minimal-streaming-agent` 开始，按顺序切换分支，阅读每个分支的代码变更差异，理解每一层设计决策的动机。然后再回到 `main` 分支研究四大进阶能力。
+> **💡 学习建议**：从 `feat/minimal-streaming-agent` 开始，按顺序切换分支，阅读每个分支的代码变更差异，理解每一层设计决策的动机。然后再回到 `main` 分支研究全部进阶能力。
 
 ---
+
+<a id="核心特性"></a>
 
 ## ✨ 核心特性
 
@@ -133,18 +121,39 @@ main (你在这里) ── 全部功能已整合的完整版本
 - Ollama 供应商复用 OpenAI 兼容协议，本地模型零配置接入（默认 `localhost:11434`）
 - 同一套 Agent 逻辑无缝运行在云端 API 或本地模型上
 
+### 10. 子代理编排
+- LLM 驱动的任务分解：将复杂任务拆分为 2-8 个独立可验证的子任务
+- 拓扑排序依赖管理：自动按依赖关系分层，检测并拒绝循环依赖
+- 分层并行执行：同层子任务多 Worker 并发（默认 3 并发），跨层串行
+- 工具权限隔离：每个子任务可指定 `tools` 白名单，限制可访问的工具集
+- 结果汇总聚合：所有子任务完成后，调用 LLM 生成统一的最终答案
+- `pnpm dev subagent "任务"` 或 REPL 中 `:sub <任务>` 一键触发
+
+### 11. 钩子生命周期
+- **Pre-Tool 钩子**：工具执行前拦截，支持四种动作：
+  - `continue` — 放行执行
+  - `deny` — 阻止执行并返回原因
+  - `modify` — 修改工具参数（patch 合并）
+  - `append` — 向工具结果追加额外输出
+- **Post-Tool 钩子**：工具执行后回调，用于审计、日志、副作用处理
+- 内置审计钩子：每次工具调用后输出 `[audit]` 时间戳、工具名、状态、摘要
+- 钩子注册返回取消订阅函数，支持动态注册/注销
+
 ---
+
+<a id="架构设计"></a>
 
 ## 🏗️ 架构设计
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
 │                          CLI 入口                            │
-│  ask / chat / resume / sessions / eval  ←  [index.ts]      │
+│  ask / chat / resume / sessions / eval / subagent  ←  [index.ts] │
 └──────────────┬──────────────────────────────────────────────┘
                │
    ┌───────────▼───────────┐
    │   CLI 交互层 [cli/]    │  repl.ts · ui.ts (spinner/markdown)
+   │  :sub / :reset / :help │
    └───────────┬───────────┘
                │
 ┌──────────────▼──────────────────────────────────────────────┐
@@ -173,6 +182,11 @@ main (你在这里) ── 全部功能已整合的完整版本
 │     │ 安全策略 + 人工审批   │  policy.ts + approver.ts      │
 │     └───────────┬───────────┘                               │
 │                 │                                           │
+│     ┌───────────▼───────────┐                               │
+│     │  钩子生命周期 [hooks/] │  Pre → deny/modify/append    │
+│     │  Pre/Post Tool Hooks  │  Post → 审计/日志             │
+│     └───────────┬───────────┘                               │
+│                 │                                           │
 │     ┌───────────▼───────────────────────┐                   │
 │     │     工具执行 (registry)           │                   │
 │     │  ┌────────────┐  ┌──────────────┐ │                   │
@@ -182,23 +196,24 @@ main (你在这里) ── 全部功能已整合的完整版本
 │     └──────────────────────────┼─────────┘                   │
 └────────────────────────────────┼─────────────────────────────┘
                                  │
-                    ┌────────────▼────────────┐
-                    │  MCP 客户端 [mcp/]      │
-                    │  JSON-RPC 子进程通信    │
-                    │  fs · memory · fetch... │
-                    └─────────────────────────┘
-                                 │
-                    ┌────────────▼────────────┐
-                    │   会话持久化 (store)    │  .anvil/sessions/*.json
-                    └─────────────────────────┘
-                                 │
-                    ┌────────────▼────────────┐
-                    │   评测系统 [eval/]      │  .anvil/eval-baseline.json
-                    │   6 任务 · 基线对比     │
-                    └─────────────────────────┘
+              ┌──────────────────┼──────────────────┐
+              │                  │                  │
+   ┌──────────▼──────────┐  ┌────▼────────────┐  ┌─▼───────────────────┐
+   │  MCP 客户端 [mcp/]   │  │ 会话持久化      │  │  评测系统 [eval/]    │
+   │  JSON-RPC 子进程     │  │ .anvil/sessions │  │  .anvil/eval-baseline│
+   │  fs · memory · fetch │  └─────────────────┘  └─────────────────────┘
+   └──────────────────────┘
+              │
+   ┌──────────▼──────────────────────────────┐
+   │  子代理编排 [agent/subagent/]           │
+   │  decompose → topoSort → runLayer       │
+   │  → summarize → finalAnswer             │
+   └─────────────────────────────────────────┘
 ```
 
 ---
+
+<a id="快速开始"></a>
 
 ## 🚀 快速开始
 
@@ -274,9 +289,11 @@ pnpm dev
 
 ---
 
+<a id="命令使用"></a>
+
 ## 💻 命令使用
 
-MiniHarness 提供五种交互模式，覆盖从单轮任务到评测基准的各种场景：
+MiniHarness 提供六种交互模式，覆盖从单轮任务到评测基准的各种场景：
 
 ### 1. 单轮任务 (`ask`)
 
@@ -288,26 +305,6 @@ pnpm dev ask "分析项目 src 目录结构，列出所有模块文件及其职�
 
 # 读取文件并修改
 pnpm dev ask "读取 src/index.ts，在开头添加版本注释，然后创建 .gitignore 文件"
-```
-
-运行中你会看到完整的 Agent 执行轨迹：
-```
-[round 1]
-  → list-dir {"path":"."}
-  ✓ list-dir → 📁 src/  📄 package.json  ...
-[round 2]
-  → read-file {"path":"src/index.ts"}
-  ✓ read-file → 1  import { registerFileTools } ...
-  [context] 2847 → 2103 tokens   ← 上下文被智能压缩
-[round 3]
-⚠️  即将执行: write-file {"path":"src/index.ts","content":"// ===== MiniHarness v1.0 ===== ..."}
-允许? [y=是 / n=否 / a=总是允许此模式] y     ← 安全审批流程
-  ✓ write-file → 已写入 src/index.ts
-
-所有改动完成：在 src/index.ts 开头添加了版本注释...
-[session] 550e8400-e29b-41d4-a716-446655440000   ← 会话 ID 用于恢复
-
-⏱  耗时: 12.3s · 轮数: 3 · token: 5421 · 成本: $0.0015   ← 成本报告
 ```
 
 ### 2. 多轮对话 (`chat`)
@@ -329,6 +326,7 @@ pnpm dev chat 550e8400-e29b-41d4-a716-446655440000
 | `:exit` / `:quit` | 退出聊天，自动保存 |
 | `:reset` | 结束当前会话，创建全新会话 |
 | `:sessions` | 列出所有历史会话 |
+| `:sub <任务>` | 子代理模式：自动分解任务并并行执行 |
 
 ### 3. 断点续跑 (`resume`)
 
@@ -351,7 +349,19 @@ pnpm dev sessions
 # a1b2c3d4  [running] 读取 package.json 并...  (2026/8/29 15:02:11)
 ```
 
-### 5. 评测基准 (`eval`)
+### 5. 子代理模式 (`subagent`)
+
+将复杂任务自动分解为子任务，按依赖关系分层并行执行后汇总结果。
+
+```bash
+# 通过 CLI 直接调用
+pnpm dev subagent "读取 src 目录下所有模块，分析每个模块的职责并生成架构总结"
+
+# 或在 REPL 中使用
+:sub 分析项目依赖关系，列出所有外部依赖及其用途
+```
+
+### 6. 评测基准 (`eval`)
 
 运行内置评测任务，验证 Agent 能力并生成报告。
 
@@ -363,27 +373,7 @@ pnpm dev eval
 pnpm dev eval --save
 ```
 
-输出示例：
-```
-=== Eval Report ===
-通过率: 5/6 (83%)
-平均轮数: 2.2
-总 token: 12450
-总成本: $0.0035
-耗时: 45.2 s
-
-=== 基线对比 ===
-基线通过率: 4/6 (67%)
-回归: 0  改进: 1
-
-=== 任务详情 ===
-✓ read-package-name    1轮  520tok  $0.0001
-✓ list-src-dir         2轮  890tok  $0.0003
-✗ count-lines-config   3轮  2100tok $0.0006 (超时)
-...
-```
-
----
+<a id="测试覆盖"></a>
 
 ## 🧪 测试覆盖
 
@@ -404,88 +394,6 @@ pnpm test:telemetry    # 成本可观测性测试 (~19 用例)
 
 > **注意**：`test:all` 脚本目前仅运行 `test` 和 `test:context`，如需运行全部测试请逐个执行或手动串联。
 
-### 测试清单
-
-| 测试文件 | 覆盖模块 | 用例数 | 特点 |
-|:---------|:---------|:-------|:-----|
-| [tool-system.test.ts](file:///g:/3_LLM_AppDev/0_Resume_Projects/MiniHarness/test/tool-system.test.ts) | 文件工具 + 注册表 | 15 | 真实临时目录，覆盖写入/读取/列目录/参数校验 |
-| [context-management.test.ts](file:///g:/3_LLM_AppDev/0_Resume_Projects/MiniHarness/test/context-management.test.ts) | Token 估算 + 截断 + 裁剪 | 18 | 边界条件极严，验证压缩后 token 数、摘要插入位置 |
-| [truncate.test.ts](file:///g:/3_LLM_AppDev/0_Resume_Projects/MiniHarness/test/truncate.test.ts) | 真实场景压缩测评 | 端到端 | 构造 7 轮真实 Agent 对话，真实调用 LLM 生成摘要再送回模型验证 |
-| [safety-permission.test.ts](file:///g:/3_LLM_AppDev/0_Resume_Projects/MiniHarness/test/safety-permission.test.ts) | 安全策略 + 审批 | 36 | spawn 子进程测试交互式 stdin，验证路径越界/危险模式/审批缓存 |
-| [session-persistence.test.ts](file:///g:/3_LLM_AppDev/0_Resume_Projects/MiniHarness/test/session-persistence.test.ts) | 会话生命周期 | 23 | 切换 cwd 到临时目录，验证创建→保存→加载→列表→删除完整流程 |
-| [cost-observability.test.ts](file:///g:/3_LLM_AppDev/0_Resume_Projects/MiniHarness/test/cost-observability.test.ts) | 成本追踪 + 报告格式化 | 19 | 定价表校验、逐轮指标采集、真实计时器、条件性真实 API 端到端验证 |
-
----
-
-## 📁 项目结构
-
-```
-MiniHarness/
-├── src/
-│   ├── index.ts                 # CLI 入口：ask / chat / resume / sessions / eval
-│   ├── config.ts                # Zod 环境变量校验 + MCP 服务器解析
-│   ├── agent/
-│   │   ├── loop.ts              # Agent 主循环（10 轮工具调用 + 事件系统）
-│   │   ├── tokens.ts            # gpt-tokenizer 精确计数
-│   │   ├── context.ts           # 上下文截断 + 工具输出裁剪
-│   │   ├── summarizer.ts        # LLM 历史摘要生成
-│   │   ├── system-prompt.ts     # System Prompt 模板
-│   │   └── index.ts             # 模块 barrel re-export
-│   ├── provider/
-│   │   ├── types.ts             # Provider 接口 + ChatMessage/StreamEvent 类型
-│   │   ├── openai.ts            # OpenAI 兼容 streamChat / chatWithTools / SSE 解析
-│   │   ├── ollama.ts            # Ollama 本地模型适配（复用 OpenAI 兼容协议）
-│   │   ├── factory.ts           # createProvider() 工厂函数
-│   │   └── index.ts
-│   ├── tools/
-│   │   ├── types.ts             # Tool / ToolResult 接口定义
-│   │   ├── registry.ts          # 工具注册表 → OpenAI 格式导出
-│   │   ├── file-tools.ts        # read-file / write-file / list-dir
-│   │   └── index.ts
-│   ├── safety/
-│   │   ├── types.ts             # Permission / ToolInvocation / SafetyOptions
-│   │   ├── policy.ts            # inWorkspace + isDangerousCommand + checkPolicy
-│   │   ├── approver.ts          # 交互式审批 + "总是允许" 缓存
-│   │   └── index.ts
-│   ├── session/
-│   │   ├── types.ts             # Session 接口定义
-│   │   ├── store.ts             # JSON 文件 CRUD + 按时间倒序列出
-│   │   └── index.ts
-│   ├── mcp/
-│   │   ├── client.ts            # MCP 客户端：子进程 JSON-RPC 2.0 通信
-│   │   ├── tool-adapter.ts      # MCP 工具 → 统一 Tool 接口适配
-│   │   └── index.ts
-│   ├── eval/
-│   │   ├── types.ts             # EvalTask / EvalResult / EvalReport 类型
-│   │   ├── tasks.ts             # 6 个内置评测任务定义
-│   │   ├── runner.ts            # 评测执行器 + 验证逻辑
-│   │   ├── report.ts            # 基线对比 + 报告格式化
-│   │   └── index.ts
-│   ├── telemetry/
-│   │   ├── types.ts             # RunMetrics / TurnMetrics / ToolCallMetrics
-│   │   ├── collector.ts         # TelemetryCollector 逐轮采集器
-│   │   ├── pricing.ts           # 多模型定价表 + 成本估算
-│   │   ├── format.ts            # 人可读报告格式化
-│   │   └── index.ts
-│   └── cli/
-│       ├── repl.ts              # 交互式 REPL（readline + colon 命令）
-│       ├── ui.ts                # 终端 UI：颜色/spinner/Markdown/工具调用渲染
-│       ├── types.d.ts           # marked-terminal 类型声明
-│       └── index.ts
-├── test/                        # 6 套独立测试（无 mock）
-├── docs/                        # 技术文档
-│   ├── CONTRIBUTING.md
-│   └── Phase-8-进阶能力技术文档.md
-├── assets/                      # Logo 资源文件
-├── .anvil/                      # 运行时数据（自动生成）
-│   ├── sessions/                # 会话 JSON 文件
-│   └── eval-baseline.json       # 评测基线报告
-├── .env.example                 # 环境变量模板
-├── tsconfig.json                # strict + nodenext + verbatimModuleSyntax
-├── package.json
-└── pnpm-lock.yaml
-```
-
 ---
 
 ## 🛠️ 技术栈
@@ -503,32 +411,6 @@ MiniHarness/
 | **存储** | JSON 文件 (`fs/promises`) | `.anvil/sessions/` 目录，零数据库 |
 | **LLM 接口** | OpenAI 兼容 Chat Completions | 默认 DeepSeek，可切换 Ollama / GPT / Qwen 等 |
 | **工具协议** | [MCP](https://modelcontextprotocol.io/) | JSON-RPC 2.0 子进程通信，接入外部工具服务器 |
-
----
-
-## 🧠 设计决策记录
-
-### 为什么上下文压缩用 summarize 而不是丢弃？
-丢弃旧消息会导致 Agent 忘记早期做出的决策和已完成的文件写入。调用 LLM 生成 200 字摘要虽然有少量 token 开销，但保留了**决策记忆**，在长任务（改 10+ 个文件）中正确性显著提升。参见 [context.ts](file:///g:/3_LLM_AppDev/0_Resume_Projects/MiniHarness/src/agent/context.ts#L22-L52)。
-
-### 为什么安全策略做三层（allow/ask/deny）而不是简单 ask？
-- `deny`：路径越界、`rm -rf` 这类操作**绝不能放行**，即便用户手滑也会被硬拦截
-- `allow`：只读操作（读文件、列目录）不需要每次都问，减少交互摩擦
-- `ask`：写文件、运行命令属于副作用操作，让用户确认
-
-参见 [policy.ts](file:///g:/3_LLM_AppDev/0_Resume_Projects/MiniHarness/src/safety/policy.ts#L39-L64)。
-
-### 为什么会话存储用 JSON 文件而不是 SQLite？
-教学项目的核心原则是**减少隐藏复杂度**。JSON 文件肉眼可读、编辑器直接打开就能调试 Agent 状态，`cat .anvil/sessions/*.json` 就能看到完整对话历史，更适合理解"持久化到底存了什么"。
-
-### 为什么 MCP 客户端用子进程而不是 HTTP？
-MCP 协议的设计本身就基于 stdio 传输——服务器读 stdin、写 stdout，天然适合子进程模型。这样做的好处是：零网络端口占用、进程隔离崩溃不影响主进程、`npx -y` 免安装启动任意服务器。参见 [client.ts](file:///g:/3_LLM_AppDev/0_Resume_Projects/MiniHarness/src/mcp/client.ts)。
-
-### 为什么遥测系统逐轮采集而不是只统计总数？
-只有逐轮采集才能回答"哪一轮最慢""哪个工具拖了后腿"这类问题。`formatMetrics` 输出最慢 Top 3 工具调用和最慢 Top 3 轮次，让性能瓶颈一目了然。总数字只能告诉你"花了多少"，逐轮数据才能告诉你"为什么花这么多"。参见 [collector.ts](file:///g:/3_LLM_AppDev/0_Resume_Projects/MiniHarness/src/telemetry/collector.ts)。
-
-### 为什么评测验证支持 script 模式？
-`contain` 和 `regex` 只能检查答案文本，但有些任务的正确性需要**实际执行验证**——比如"src/config.ts 有多少行"，答案是否正确取决于真实行数。`script` 模式运行自定义 Node 脚本，能处理任意复杂的验证逻辑。参见 [runner.ts](file:///g:/3_LLM_AppDev/0_Resume_Projects/MiniHarness/src/eval/runner.ts)。
 
 ---
 
