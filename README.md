@@ -61,6 +61,7 @@ MiniHarness 不是一个开箱即用的 SDK，而是一套**完整的 Agent 框�
 | `feat/hook-lifecycle` | 钩子生命周期 | 工具执行拦截与增强 | Pre/Post 钩子注册机制、四种 HookAction（continue/deny/modify/append）、审计日志钩子 |
 | `feat/cli-polish` | CLI 交互体验 | REPL 交互 & 终端渲染 | 交互式 REPL 对话循环、marked-terminal 流式 Markdown 渲染、ora 加载动画、picocolors 彩色输出 |
 | `feat/project-memory` | 项目记忆 | AGENTS.md 约定 & 上下文注入 | AGENTS.md 文档模板、项目记忆加载与截断、系统提示词上下文注入机制 |
+| `main` | 完整产品 | 全部能力集成 | 合并 13 个分支的全部能力，开箱即用的生产级 Agent 框架 |
 
 ### main 分支：完整产品
 
