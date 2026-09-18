@@ -8,7 +8,6 @@ import type { EvalTask, EvalResult, EvalReport } from "./index.ts";
 const execP = promisify(exec);
 const TIMEOUT_MS = 60_000;
 
-// Provider 无状态，模块级创建一次即可
 const provider = createProvider();
 
 async function verify(task: EvalTask, answer: string, workspace: string): Promise<boolean> {

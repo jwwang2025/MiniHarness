@@ -8,7 +8,6 @@ import { createSession, listSessions, type Session } from "../session/index.ts";
 import { startSpinner, stopSpinner, renderToolCall, color } from "./index.ts";
 import { formatMetrics } from "../telemetry/index.ts";
 
-// Provider 无状态，模块级创建一次即可
 const provider = createProvider();
 
 function onEvent(event: LoopEvent) {
@@ -30,13 +29,11 @@ function onEvent(event: LoopEvent) {
             stderr.write(`  ${color.gray(`⚡ 压缩 ${event.beforeTokens}→${event.afterTokens} tok`)}\n`);
             break;
         case "text_delta": {
-            // 首个 delta 到达时停掉 spinner，避免 ora 刷新覆盖流式输出
             stopSpinner();
             output.write(event.delta);
             break;
         }
         case "safety": {
-            // 停掉 spinner，避免 ora 持续写 stdout 把审批提示覆盖掉，导致用户看不到 [y/n]
             stopSpinner();
             const icon = event.kind === "deny" ? "🚫" : event.kind === "ask" ? "❓" : "✅";
             stderr.write(`  ${icon} ${color.gray(`[${event.kind}] ${event.tool}`)}\n`);
@@ -53,7 +50,6 @@ export async function repl(
     session?: Session,
 ): Promise<void> {
     const rl = readline.createInterface({ input, output, terminal: true });
-    // 安全审批交互复用同一个 readline，避免与主输入竞争
     const promptFn = (q: string) => rl.question(q).then((a: string) => a.trim());
     const mergedSafety: SafetyOptions = { ...safetyOptions, promptFn };
 
@@ -69,7 +65,6 @@ export async function repl(
         process.exit(0);
     };
 
-    // stdin EOF（管道/重定向/Ctrl+D）时优雅退出，避免 while 循环再访问已关闭的 rl
     rl.on("close", exitWithHint);
     rl.on("SIGINT", () => {
         ctrlCCount++;
@@ -111,7 +106,7 @@ export async function repl(
         try {
             inputText = await rl.question(color.cyan("\n❯ "));
         } catch {
-            return; // rl 在等待期间被关闭（管道 EOF / Ctrl+D）
+            return;
         }
         const text = inputText.trim();
         if (!text) return;
@@ -161,7 +156,6 @@ export async function repl(
             session: currentSession,
         }).then(
             (r) => {
-                // 答案已通过 text_delta 实时输出，这里补换行 + 报告
                 output.write("\n");
                 stderr.write(formatMetrics(r.metrics!) + "\n");
             },

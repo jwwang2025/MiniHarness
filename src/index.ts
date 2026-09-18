@@ -20,7 +20,6 @@ process.on("SIGINT", () => {
   process.exit(130);
 });
 
-// 解析 --workspace 参数
 function parseWorkspace(): string {
   for (let i = 0; i < rest.length; i++) {
     if (rest[i] === "--workspace" && rest[i + 1]) {
@@ -38,7 +37,6 @@ process.chdir(workspace);
 const ctx = { workspace };
 const mcpServers = parseMCPServers(mcpServersRaw, workspace);
 
-// 启动 MCP 服务器并注册工具（失败不阻塞主流程）
 const mcpClients: MCPClient[] = [];
 for (const cfg of mcpServers) {
   const client = new MCPClient(cfg.name, cfg.command, cfg.args, cfg.env);
@@ -53,7 +51,6 @@ for (const cfg of mcpServers) {
 }
 process.on("exit", () => mcpClients.forEach((c) => c.stop()));
 
-// --- Hook: 审计日志 ---
 onPostToolUse(({ toolName, result }) => {
   const ts = new Date().toISOString();
   const status = result.ok ? "OK" : "FAIL";
@@ -79,24 +76,22 @@ const logEvent = (e: LoopEvent) => {
     case "safety":              console.error(`  [safety:${e.kind}] ${e.tool}${e.detail ? ` ${e.detail}` : ""}`); break;
     case "tool_result":         console.error(`  ${e.ok ? "✓" : "✗"} ${e.name} → ${e.output.slice(0, 100)}${e.output.length > 100 ? "..." : ""}`); break;
     case "context_compressed": console.error(`  [context] ${e.beforeTokens} → ${e.afterTokens} tokens`); break;
-    case "text_delta":          process.stdout.write(e.delta); break; // 流式答案直出 stdout
-    case "answer":              break; // answer 已通过 text_delta 实时打印
+    case "text_delta":          process.stdout.write(e.delta); break;
+    case "answer":              break;
   }
 };
 
-// ask：单轮任务，自动建会话并落盘
 async function ask() {
   const question = rest.join(" ").trim();
   if (!question) { console.error(USAGE); process.exit(1); }
   const session = await createSession();
   session.title = question.length > 30 ? question.slice(0, 30) + "..." : question;
   const result = await runAgent( question, provider, ctx, ctrl.signal, { onEvent: logEvent, session });
-  console.log(); // 答案已流式输出，补换行
+  console.log();
   console.error(`\n[session] ${session.id}`);
   console.error(formatMetrics(result.metrics!));
 }
 
-// chat：多轮对话，自动持久化，支持恢复（UI 委托给 cli/repl）
 async function chat() {
   const sessionId = rest[0];
   if (sessionId) {
@@ -109,18 +104,16 @@ async function chat() {
   await repl(ctx.workspace, {});
 }
 
-// resume：从落盘的 session 续跑
 async function resume() {
   const id = rest[0];
   if (!id) { console.error(USAGE); process.exit(1); }
   const session = await loadSession(id);
   if (!session) { console.error(`未找到会话 ${id}`); process.exit(1); }
   const result = await runAgent( "", provider, ctx, ctrl.signal, { onEvent: logEvent, session });
-  console.log(); // 答案已流式输出，补换行
+  console.log();
   console.error(formatMetrics(result.metrics!));
 }
 
-// sessions：列出所有会话
 async function sessions() {
   const list = await listSessions();
   if (!list.length) { console.log("暂无会话"); return; }
@@ -130,7 +123,6 @@ async function sessions() {
   }
 }
 
-// subagent：子代理模式 —— 自动分解任务 → 并行执行 → 汇总结果
 async function subagent() {
   const task = rest.join(" ").trim();
   if (!task) { console.error(USAGE); process.exit(1); }
@@ -166,7 +158,6 @@ async function subagent() {
   console.log(finalAnswer);
 }
 
-// eval：跑评测集，可选 --save 存为新基线
 async function eval_() {
     const isSaveBaseline = rest[0] === "--save";
     const workspace = ctx.workspace;

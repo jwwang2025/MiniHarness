@@ -1,26 +1,14 @@
 import type { ChatMessage, Provider } from "../provider/index.ts";
 import { appendToolMessages } from "../provider/index.ts";
 import { getTool, toOpenAITools, type ToolContext } from "../tools/index.ts";
-/* feat/context-management
-*----------------------------------------------------------------
-*/
 import { truncate, DEFAULT_CTX, clipToolOutput } from "./context.ts";
 import { summarizeMessages } from "./summarizer.ts";
 import { SYSTEM_PROMPT } from "./system-prompt.ts";
 import { loadProjectMemory, withMemory } from "./memory.ts";
 import { estimateMessagesTokens } from "./tokens.ts";
-/* feat/safety-permission
-*----------------------------------------------------------------
-*/
 import { checkPolicy, approve, type ToolInvocation, type SafetyOptions } from "../safety/index.ts";
-/* feat/session-persistence
-*----------------------------------------------------------------
-*/
 import { saveSession, type Session } from "../session/index.ts";
 import { TelemetryCollector, type RunMetrics } from "../telemetry/index.ts";
-/* feat/hook-lifecycle
-*----------------------------------------------------------------
-*/
 import { runPreToolUse, runPostToolUse } from "../hooks/index.ts";
 
 const MAX_ROUNDS = 10;
@@ -86,11 +74,9 @@ export async function runAgent(
   const sysMsg: ChatMessage = { role: "system", content: systemPrompt };
   let messages: ChatMessage[];
   if (isResume) {
-    // 断点续跑：从 session 恢复消息，确保 system 消息存在
     const prev = opts.session!.messages ?? [];
     messages = prev[0]?.role === "system" ? [...prev] : [sysMsg, ...prev];
   } else if (opts.session) {
-    // 多轮对话：追加新 user 消息到 session，确保 system 消息存在
     const prev = opts.session.messages;
     messages = prev[0]?.role === "system"
       ? [...prev, { role: "user", content: task }]
@@ -102,7 +88,6 @@ export async function runAgent(
 
   const maxRounds = opts.maxRounds ?? MAX_ROUNDS;
 
-  // 工具过滤：子任务可通过 ctx.allowedTools 限制可见工具集
   const allTools = toOpenAITools();
   const tools = ctx.allowedTools
     ? allTools.filter(t => ctx.allowedTools!.has(t.function.name))
@@ -112,7 +97,6 @@ export async function runAgent(
     collector.startTurn(round);
     opts.onEvent?.({ type: "thinking", round });
 
-    // 上下文压缩：summarize 闭包携带 signal
     const beforeTokens = estimateMessagesTokens(messages);
     const { messages: truncated, compressed } = await truncate(
       messages,
@@ -129,7 +113,6 @@ export async function runAgent(
       });
     }
 
-    // 流式调用：文本增量实时推送，tool_calls 分片按 index 聚合
     collector.startModelCall();
     let content = "";
     const tcMap = new Map<number, { id: string; name: string; arguments: string }>();
@@ -156,7 +139,6 @@ export async function runAgent(
     collector.endModelCall(usage);
     const toolCalls = [...tcMap.values()];
 
-    // 没有工具调用 → 返回文本，并把 assistant 回答追加进历史，供后续多轮对话使用
     if (!toolCalls.length) {
       const finalMessages: ChatMessage[] = [...messages, { role: "assistant", content }];
       if(opts.session) {
@@ -169,7 +151,6 @@ export async function runAgent(
       return { answer: content, messages: finalMessages, metrics };
     }
 
-    // 执行所有工具调用
     const toolResults = [];
     for (const tc of toolCalls) {
       const tool = getTool(tc.name);
@@ -183,7 +164,6 @@ export async function runAgent(
         continue;
       }
 
-      // --- 安全检查 + 审批 ---
       const args = JSON.parse(tc.arguments || "{}");
       const inv: ToolInvocation = { toolName: tc.name, args, workspace: ctx.workspace };
       const policyPerm = checkPolicy(inv, safetyOptions);
@@ -198,7 +178,6 @@ export async function runAgent(
         continue;
       }
 
-      // --- Hook: PreToolUse ---
       const preResult = await runPreToolUse({ toolName: tc.name, args, workspace: ctx.workspace });
       if (preResult.action.type === "deny") {
         collector.startToolCall(tc.name);
@@ -214,10 +193,8 @@ export async function runAgent(
       const result = await tool.execute(args, ctx);
       collector.endToolCall(result.ok, permission);
 
-      // --- Hook: PostToolUse ---
       await runPostToolUse({ toolName: tc.name, args, result, workspace: ctx.workspace });
 
-      // --- Hook: append — 追加 PreToolUse 钩子的额外输出到工具结果 ---
       if (preResult.appends.length > 0) {
         const extra = preResult.appends.join("\n");
         if (result.ok) {
@@ -232,8 +209,7 @@ export async function runAgent(
       opts.onEvent?.({ type: "tool_result", name: tc.name, output, ok: result.ok });
     }
 
-    // 把 assistant 消息 + tool 结果追加回历史
-    // 注意：内部 ToolCall 是扁平结构，发回 API 需转成标准 OpenAI 格式
+    // 内部 ToolCall 是扁平结构，发回 API 需转成标准 OpenAI 格式
     const assistantMsg: ChatMessage = {
       role: "assistant",
       content,

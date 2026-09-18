@@ -7,7 +7,6 @@ const DEFAULT_POLICY: Record<string, Permission> = {
     "write-file": "ask",
     "edit-file": "ask",
     "run-shell": "ask",
-    // MCP filesystem 工具
     "mcp__fs__search_files": "allow",
     "mcp__fs__list_directory": "allow",
     "mcp__fs__read_file": "allow",
@@ -17,7 +16,6 @@ const DEFAULT_POLICY: Record<string, Permission> = {
     "mcp__fs__create_directory": "ask",
     "mcp__fs__move_file": "ask",
     "mcp__fs__search_files": "allow",
-    // MCP memory 工具
     "mcp__mem__read_entities": "allow",
     "mcp__mem__read_graph": "allow",
     "mcp__mem__search_nodes": "allow",
@@ -28,12 +26,10 @@ const DEFAULT_POLICY: Record<string, Permission> = {
     "mcp__mem__delete_entities": "ask",
     "mcp__mem__delete_relations": "ask",
     "mcp__mem__delete_observations": "ask",
-    // MCP shell 工具（local-terminal-mcp）
     "mcp__shell__shell_run": "ask",
     "mcp__shell__check_command": "allow",
     "mcp__shell__list_rules": "allow",
     "mcp__shell__reload_config": "ask",
-    // Git MCP 工具 — 只读操作 allow，写操作 ask，破坏性操作 deny
     "mcp__git__git_status": "allow",
     "mcp__git__git_diff": "allow",
     "mcp__git__git_log": "allow",
@@ -116,7 +112,6 @@ export function checkPolicy(inv: ToolInvocation, opts: SafetyOptions = {}): Perm
         }
     }
 
-    // Git MCP 工具 — 检查 repoPath 参数是否在工作区内
     if (toolName.startsWith("mcp__git__") && typeof args.repoPath === "string") {
         const safe = inWorkspace(workspace, args.repoPath);
         if (!safe) {

@@ -9,7 +9,6 @@ export async function loadBaseline(): Promise<EvalReport | null> {
         const data = await readFile(BASELINE_PATH, "utf-8");
         return JSON.parse(data) as EvalReport;
     } catch (e) {
-        // 首次运行时基线文件不存在，返回 null 走"无基线"分支
         return null;
     }
 }

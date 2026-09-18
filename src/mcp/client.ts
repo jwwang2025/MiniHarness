@@ -107,7 +107,6 @@ export class MCPClient {
     get isDead() { return this.dead; }
     get name() { return this.serverName; }
 
-     // ---------- 内部方法 ----------
     private request(method: string, params: Record<string, unknown> = {}): Promise<unknown> {
         if (this.dead){ 
             return Promise.reject(new Error(`MCP ${this.serverName} 已停止`));
@@ -144,7 +143,6 @@ export class MCPClient {
             if (!trimmed) continue;
 
             const msg = JSON.parse(trimmed) as JsonRpcResponse;
-            // 只处理有 id 的响应（通知无 id，静默忽略）
             if (msg.id == null) continue;
             const entry = this.pending.get(String(msg.id));
             if (!entry) continue;

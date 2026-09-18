@@ -28,7 +28,6 @@ export function stopSpinner(msg?: string,symbol?: string): void {
 }
 
 export function renderMarkdown(text: string): string {
-    // marked.parse 默认同步返回 string；async:false 既约束类型又显式声明意图
     return marked.parse(text, { async: false }).trim();
 }
 

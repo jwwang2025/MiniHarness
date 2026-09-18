@@ -30,7 +30,6 @@ export async function truncate(
     if (used <= budget) 
         return { messages, compressed: false };
 
-    // 压缩后重注入 system prompt（含 AGENTS.md）
     const sysMsg = systemPrompt
         ? { role: "system" as const, content: systemPrompt }
         : messages[0]?.role === "system" ? messages[0] : null;

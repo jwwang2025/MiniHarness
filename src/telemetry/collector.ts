@@ -4,9 +4,9 @@ import type { RunMetrics, TurnMetrics, ToolCallMetrics } from "./types.ts";
 export class TelemetryCollector {
   private run: RunMetrics;
   private currentTurn?: TurnMetrics;
-  private turnStart = 0;  // 一轮循环开始时间戳（毫秒）
-  private modelStart = 0; // 调用大模型开始时间戳
-  private toolStart = 0;  // 工具调用开始时间戳
+  private turnStart = 0;
+  private modelStart = 0;
+  private toolStart = 0;
 
   constructor(task: string, private model: string, sessionId?: string) {
     this.run = {
@@ -40,7 +40,6 @@ export class TelemetryCollector {
     this.modelStart = Date.now();
   }
 
-  /** usage 来自 Provider 流式事件的最后一个 chunk，可能 undefined */
   endModelCall(usage?: { promptTokens: number; completionTokens: number; totalTokens: number }): void {
     if (!this.currentTurn) return;
     this.currentTurn.modelDurationMs = Date.now() - this.modelStart;
@@ -51,7 +50,6 @@ export class TelemetryCollector {
     }
   }
 
-  /** start 时先 push 占位记录（只有 name），end 时回填其余字段 */
   startToolCall(name: string): void {
     this.toolStart = Date.now();
     this.run.toolCallCount++;
