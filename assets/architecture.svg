@@ -1,0 +1,182 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 980 1160" font-family="'Segoe UI','PingFang SC','Microsoft YaHei','Noto Sans CJK SC','Hiragino Sans GB',sans-serif">
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+      <path d="M0 0L10 5L0 10z" fill="#57606a"/>
+    </marker>
+    <marker id="arrow-h" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto">
+      <path d="M0 0L10 5L0 10z" fill="#57606a"/>
+    </marker>
+    <filter id="shadow" x="-3%" y="-3%" width="106%" height="115%">
+      <feDropShadow dx="0" dy="2" stdDeviation="3" flood-opacity="0.10"/>
+    </filter>
+  </defs>
+
+  <!-- Background -->
+  <rect width="980" height="1160" fill="#ffffff" rx="12"/>
+
+  <!-- Title -->
+  <text x="440" y="36" text-anchor="middle" font-size="20" font-weight="700" fill="#1f2328">MiniHarness 架构设计</text>
+  <text x="440" y="56" text-anchor="middle" font-size="13" fill="#656d76">从 CLI 入口到子代理编排的完整数据流</text>
+
+  <!-- ===== Layer 1: CLI Entry ===== -->
+  <g filter="url(#shadow)">
+    <rect x="140" y="76" width="600" height="62" rx="10" fill="#ddf4ff" stroke="#0969da" stroke-width="1.5"/>
+  </g>
+  <text x="440" y="100" text-anchor="middle" font-size="15" font-weight="600" fill="#0550ae">CLI 入口 [index.ts]</text>
+  <text x="440" y="121" text-anchor="middle" font-size="13" fill="#57606a">ask · chat · resume · sessions · eval · subagent</text>
+
+  <!-- Arrow -->
+  <line x1="440" y1="138" x2="440" y2="166" stroke="#57606a" stroke-width="2" marker-end="url(#arrow)"/>
+
+  <!-- ===== Layer 2: CLI Interaction ===== -->
+  <g filter="url(#shadow)">
+    <rect x="190" y="168" width="500" height="62" rx="10" fill="#ddf4ff" stroke="#0969da" stroke-width="1.5"/>
+  </g>
+  <text x="440" y="192" text-anchor="middle" font-size="15" font-weight="600" fill="#0550ae">CLI 交互层 [cli/]</text>
+  <text x="440" y="213" text-anchor="middle" font-size="13" fill="#57606a">repl.ts · ui.ts (spinner / markdown) · :sub / :reset / :help</text>
+
+  <!-- Arrow -->
+  <line x1="440" y1="230" x2="440" y2="258" stroke="#57606a" stroke-width="2" marker-end="url(#arrow)"/>
+
+  <!-- ===== Layer 3: Agent Main Loop Container ===== -->
+  <rect x="50" y="260" width="780" height="640" rx="14" fill="#f6fff8" stroke="#1f883d" stroke-width="2" stroke-dasharray="7,4"/>
+  <text x="440" y="288" text-anchor="middle" font-size="16" font-weight="700" fill="#1a7f37">Agent 主循环 [loop.ts]</text>
+  <text x="440" y="307" text-anchor="middle" font-size="13" fill="#57606a">MAX_ROUNDS=10 · 事件驱动 (LoopEvent)</text>
+
+  <!-- 3a: Context Management (3 boxes horizontal) -->
+  <line x1="440" y1="316" x2="440" y2="332" stroke="#57606a" stroke-width="2" marker-end="url(#arrow)"/>
+
+  <g filter="url(#shadow)">
+    <rect x="80" y="334" width="220" height="56" rx="8" fill="#ddf4ff" stroke="#0969da" stroke-width="1.2"/>
+  </g>
+  <text x="190" y="358" text-anchor="middle" font-size="14" font-weight="600" fill="#0550ae">Token 估算</text>
+  <text x="190" y="378" text-anchor="middle" font-size="12" fill="#656d76">[tokens.ts]</text>
+
+  <line x1="302" y1="362" x2="338" y2="362" stroke="#57606a" stroke-width="2" marker-end="url(#arrow-h)"/>
+
+  <g filter="url(#shadow)">
+    <rect x="340" y="334" width="220" height="56" rx="8" fill="#ddf4ff" stroke="#0969da" stroke-width="1.2"/>
+  </g>
+  <text x="450" y="358" text-anchor="middle" font-size="14" font-weight="600" fill="#0550ae">上下文截断</text>
+  <text x="450" y="378" text-anchor="middle" font-size="12" fill="#656d76">[context.ts]</text>
+
+  <line x1="562" y1="362" x2="598" y2="362" stroke="#57606a" stroke-width="2" marker-end="url(#arrow-h)"/>
+
+  <g filter="url(#shadow)">
+    <rect x="600" y="334" width="220" height="56" rx="8" fill="#ddf4ff" stroke="#0969da" stroke-width="1.2"/>
+  </g>
+  <text x="710" y="358" text-anchor="middle" font-size="14" font-weight="600" fill="#0550ae">LLM 摘要压缩</text>
+  <text x="710" y="378" text-anchor="middle" font-size="12" fill="#656d76">[summarizer.ts]</text>
+
+  <!-- Arrow down -->
+  <line x1="440" y1="390" x2="440" y2="418" stroke="#57606a" stroke-width="2" marker-end="url(#arrow)"/>
+
+  <!-- 3b: Provider Factory -->
+  <g filter="url(#shadow)">
+    <rect x="110" y="420" width="660" height="88" rx="10" fill="#f5e8ff" stroke="#8250df" stroke-width="1.5"/>
+  </g>
+  <text x="440" y="444" text-anchor="middle" font-size="14" font-weight="600" fill="#6639ba">Provider 工厂 [provider/factory.ts]</text>
+
+  <g filter="url(#shadow)">
+    <rect x="150" y="458" width="250" height="38" rx="6" fill="#ffffff" stroke="#8250df" stroke-width="1"/>
+  </g>
+  <text x="275" y="482" text-anchor="middle" font-size="13" fill="#57606a">OpenAI 兼容 [openai.ts]</text>
+
+  <g filter="url(#shadow)">
+    <rect x="480" y="458" width="250" height="38" rx="6" fill="#ffffff" stroke="#8250df" stroke-width="1"/>
+  </g>
+  <text x="605" y="482" text-anchor="middle" font-size="13" fill="#57606a">Ollama 本地模型 [ollama.ts]</text>
+
+  <!-- Arrow down -->
+  <line x1="440" y1="508" x2="440" y2="536" stroke="#57606a" stroke-width="2" marker-end="url(#arrow)"/>
+
+  <!-- 3c: Telemetry -->
+  <g filter="url(#shadow)">
+    <rect x="140" y="538" width="600" height="50" rx="8" fill="#fff8c5" stroke="#bf8700" stroke-width="1.5"/>
+  </g>
+  <text x="440" y="558" text-anchor="middle" font-size="14" font-weight="600" fill="#9a6700">遥测采集 [telemetry/collector.ts]</text>
+  <text x="440" y="577" text-anchor="middle" font-size="12" fill="#656d76">逐轮: 耗时 · Token · 工具 · 成本</text>
+
+  <!-- Arrow down -->
+  <line x1="440" y1="588" x2="440" y2="616" stroke="#57606a" stroke-width="2" marker-end="url(#arrow)"/>
+
+  <!-- 3d: Safety -->
+  <g filter="url(#shadow)">
+    <rect x="140" y="618" width="600" height="50" rx="8" fill="#ffebe9" stroke="#cf222e" stroke-width="1.5"/>
+  </g>
+  <text x="440" y="638" text-anchor="middle" font-size="14" font-weight="600" fill="#cc2222">安全策略 + 人工审批</text>
+  <text x="440" y="657" text-anchor="middle" font-size="12" fill="#656d76">policy.ts + approver.ts · autoApprove (allow/deny)</text>
+
+  <!-- Arrow down -->
+  <line x1="440" y1="668" x2="440" y2="696" stroke="#57606a" stroke-width="2" marker-end="url(#arrow)"/>
+
+  <!-- 3e: Hooks -->
+  <g filter="url(#shadow)">
+    <rect x="140" y="698" width="600" height="64" rx="8" fill="#def4f4" stroke="#0a7b83" stroke-width="1.5"/>
+  </g>
+  <text x="440" y="722" text-anchor="middle" font-size="14" font-weight="600" fill="#0a7b83">钩子生命周期 [hooks/]</text>
+  <text x="440" y="742" text-anchor="middle" font-size="12" fill="#656d76">Pre → deny / modify / append · Post → 审计 / 日志</text>
+
+  <!-- Arrow down -->
+  <line x1="440" y1="762" x2="440" y2="790" stroke="#57606a" stroke-width="2" marker-end="url(#arrow)"/>
+
+  <!-- 3f: Tool Execution -->
+  <g filter="url(#shadow)">
+    <rect x="110" y="792" width="660" height="88" rx="10" fill="#ddf4ff" stroke="#0969da" stroke-width="1.5"/>
+  </g>
+  <text x="440" y="816" text-anchor="middle" font-size="14" font-weight="600" fill="#0550ae">工具执行 [registry]</text>
+
+  <g filter="url(#shadow)">
+    <rect x="150" y="830" width="250" height="38" rx="6" fill="#ffffff" stroke="#0969da" stroke-width="1"/>
+  </g>
+  <text x="275" y="854" text-anchor="middle" font-size="13" fill="#57606a">内置工具 [file-tools]</text>
+
+  <g filter="url(#shadow)">
+    <rect x="480" y="830" width="250" height="38" rx="6" fill="#ffffff" stroke="#0969da" stroke-width="1"/>
+  </g>
+  <text x="605" y="854" text-anchor="middle" font-size="13" fill="#57606a">MCP 工具 [tool-adapter]</text>
+
+  <!-- Arrow down (exiting container) -->
+  <line x1="440" y1="900" x2="440" y2="930" stroke="#57606a" stroke-width="2" marker-end="url(#arrow)"/>
+
+  <!-- ===== Layer 4: External Systems ===== -->
+  <g filter="url(#shadow)">
+    <rect x="50" y="932" width="250" height="68" rx="8" fill="#f6f8fa" stroke="#57606a" stroke-width="1.5"/>
+  </g>
+  <text x="175" y="956" text-anchor="middle" font-size="14" font-weight="600" fill="#24292f">MCP 客户端 [mcp/]</text>
+  <text x="175" y="976" text-anchor="middle" font-size="12" fill="#656d76">JSON-RPC 子进程 · fs · memory · fetch</text>
+
+  <g filter="url(#shadow)">
+    <rect x="315" y="932" width="250" height="68" rx="8" fill="#f6f8fa" stroke="#57606a" stroke-width="1.5"/>
+  </g>
+  <text x="440" y="956" text-anchor="middle" font-size="14" font-weight="600" fill="#24292f">会话持久化</text>
+  <text x="440" y="976" text-anchor="middle" font-size="12" fill="#656d76">.anvil/sessions</text>
+
+  <g filter="url(#shadow)">
+    <rect x="580" y="932" width="250" height="68" rx="8" fill="#f6f8fa" stroke="#57606a" stroke-width="1.5"/>
+  </g>
+  <text x="705" y="956" text-anchor="middle" font-size="14" font-weight="600" fill="#24292f">评测系统 [eval/]</text>
+  <text x="705" y="976" text-anchor="middle" font-size="12" fill="#656d76">.anvil/eval-baseline</text>
+
+  <!-- Arrow down -->
+  <line x1="440" y1="1000" x2="440" y2="1028" stroke="#57606a" stroke-width="2" marker-end="url(#arrow)"/>
+
+  <!-- ===== Layer 5: Subagent ===== -->
+  <g filter="url(#shadow)">
+    <rect x="110" y="1030" width="660" height="68" rx="10" fill="#f5e8ff" stroke="#8250df" stroke-width="1.5"/>
+  </g>
+  <text x="440" y="1056" text-anchor="middle" font-size="14" font-weight="600" fill="#6639ba">子代理编排 [agent/subagent/]</text>
+  <text x="440" y="1076" text-anchor="middle" font-size="12" fill="#656d76">decompose → topoSort → runLayer → summarize → finalAnswer</text>
+
+  <!-- ===== Right sidebar: Project Memory ===== -->
+  <g>
+    <rect x="850" y="260" width="110" height="640" rx="10" fill="#fff8c5" stroke="#bf8700" stroke-width="1.2" stroke-dasharray="5,3"/>
+    <text x="905" y="580" text-anchor="middle" font-size="13" font-weight="600" fill="#9a6700" transform="rotate(-90 905 580)">项目记忆 AGENTS.md</text>
+    <text x="905" y="620" text-anchor="middle" font-size="11" fill="#9a6700" transform="rotate(-90 905 620)">系统提示词注入 · Token 预算截断</text>
+    <!-- Dashed arrow pointing left -->
+    <line x1="850" y1="580" x2="836" y2="580" stroke="#bf8700" stroke-width="1.5" stroke-dasharray="4,3" marker-end="url(#arrow)"/>
+  </g>
+
+  <!-- Footer -->
+  <text x="440" y="1135" text-anchor="middle" font-size="11" fill="#8c959f">MiniHarness — 从最小可行 Agent 到生产级基础设施的渐进式学习路径</text>
+</svg>
